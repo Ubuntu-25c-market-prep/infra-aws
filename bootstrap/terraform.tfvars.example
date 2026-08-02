@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored and blocked
+# by the security workflow - never commit it.
+
+account_id   = "909783398044"
+region       = "us-east-1"
+org_prefix   = "u25c"
+
+monthly_budget_usd    = "2500"
+anomaly_threshold_usd = 50
+
+alert_emails = [
+  "tishbekaslan@gmail.com",
+]

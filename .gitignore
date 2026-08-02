@@ -1,0 +1,19 @@
+# Never commit - the security workflow also blocks these at PR time.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+.terraform/
+# .terraform.lock.hcl is intentionally committed - it pins provider hashes
+terraform.tfstate
+terraform.tfstate.*
+*.tfstate.backup
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+.terraformrc
+terraform.rc
+kubeconfig
+*.pem
+*.key
+.env

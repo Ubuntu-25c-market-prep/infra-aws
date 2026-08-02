@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars after running ../bootstrap. Never commit terraform.tfvars.
+account_id   = "909783398044"
+region       = "us-east-1"
+org_prefix   = "u25c"
+github_org   = "Ubuntu-25c-market-prep"
+
+# Both come from `terraform output` in ../bootstrap.
+state_bucket = "u25c-tfstate-909783398044"
+kms_key_arn  = "arn:aws:kms:us-east-1:909783398044:key/REPLACE-ME"
