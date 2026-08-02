@@ -88,3 +88,39 @@ Naming, tagging and state-key conventions are in
 **This repository is public.** Never commit `terraform.tfvars`, state files, or
 kubeconfigs — the security workflow blocks them at pull-request time and GitHub
 push protection blocks credential patterns at push time.
+
+## budgets/ — cost ceiling with an enforcement action
+
+**AWS has no true hard spending cap.** This is the closest available:
+
+| Layer | What it does |
+|---|---|
+| Alerts at 25 / 50 / 80 / 100% actual, 100% forecast | Email. With nothing deployed, the 25% notice is the real signal. |
+| Per-account budgets (Dev / Staging / Prod) | Catches one account running away before the org total notices. |
+| Cost anomaly detection, IMMEDIATE | Catches a spike inside a period the monthly budget would miss. |
+| **Budget action → freeze SCP** | Attaches a deny policy to workload accounts, blocking new EC2, EKS, RDS, ELB, NAT, CloudFront and similar. |
+
+Limits of the freeze, stated plainly:
+
+- It blocks **new** resource creation. Anything already running keeps billing.
+- **SCPs do not apply to the management account** (`909783398044`), so build the
+  platform in Dev / Staging / Prod — not in management.
+- `AUTOMATIC` approval trips without asking. Switch to `MANUAL` if a false
+  positive locking the team out mid-sprint is worse than an overnight overrun.
+
+### Prerequisite
+
+SCPs are not currently enabled on this organisation (`PolicyTypes: []`).
+Enabling the policy type changes nothing on its own — no policy is attached
+until the budget action fires:
+
+```bash
+aws organizations enable-policy-type \
+  --root-id r-e8kk \
+  --policy-type SERVICE_CONTROL_POLICY
+```
+
+### Lifting a freeze
+
+`terraform output detach_freeze_command` prints the exact detach command. Fix
+the cause first, or it re-attaches at the next evaluation.

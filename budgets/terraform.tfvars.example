@@ -1,0 +1,30 @@
+# Copy to terraform.tfvars. Never commit terraform.tfvars.
+
+management_account_id = "909783398044"
+region                = "us-east-1"
+org_prefix            = "u25c"
+
+# Member accounts only. The management account cannot be governed by an SCP.
+workload_account_ids = [
+  "808540602855", # Dev
+  "972379852819", # Staging
+  "829860303036", # Prod
+]
+
+# Nothing is deployed yet, so start low. Raise it deliberately as waves land -
+# the full platform cost model is roughly $2,400/month.
+monthly_ceiling_usd      = "200"
+freeze_threshold_percent = 100
+freeze_approval_model    = "AUTOMATIC"
+
+per_account_ceilings_usd = {
+  "808540602855" = "100" # Dev
+  "972379852819" = "60"  # Staging
+  "829860303036" = "80"  # Prod
+}
+
+anomaly_threshold_usd = 25
+
+alert_emails = [
+  "tishbekaslan@gmail.com",
+]
