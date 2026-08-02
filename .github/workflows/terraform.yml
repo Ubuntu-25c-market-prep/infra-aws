@@ -21,10 +21,18 @@ name: Terraform
 
 on:
   pull_request:
-    paths: ["bootstrap/**", "iam/**", ".github/workflows/terraform.yml"]
+    paths:
+      - "bootstrap/**"
+      - "iam/**"
+      - "network/**"
+      - ".github/workflows/terraform.yml"
   push:
     branches: [main]
-    paths: ["bootstrap/**", "iam/**", ".github/workflows/terraform.yml"]
+    paths:
+      - "bootstrap/**"
+      - "iam/**"
+      - "network/**"
+      - ".github/workflows/terraform.yml"
 
 # id-token is what makes OIDC work. Without it there is no token to exchange and
 # the role assumption fails with a message that does not mention this line.
@@ -39,19 +47,60 @@ env:
   STATE_BUCKET: u25c-tfstate-808540602855
 
 jobs:
+  # Which layers CI runs, resolved against what is actually in the tree.
+  #
+  # WORKLOAD_MODULES below is the declaration, in dependency order. A layer that
+  # is listed but not yet written is skipped rather than failing - the epics land
+  # over months, and a red check for a directory nobody has created yet trains
+  # people to ignore red checks.
+  #
+  # Adding a layer therefore means: append it here, add it to the `paths:`
+  # filters above, and set its TFVARS_<NAME> secret. Miss the secret and the plan
+  # fails loudly on the first run, which is the intent.
+  #
+  # Management-account layers - budgets, organization, identity - are absent on
+  # purpose. Both OIDC roles live in the workload account, so CI cannot reach
+  # them at all. See the header.
+  modules:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      any: ${{ steps.resolve.outputs.any }}
+    env:
+      WORKLOAD_MODULES: "bootstrap iam network"
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: resolve
+        run: |
+          set -euo pipefail
+          items=""
+          for m in ${WORKLOAD_MODULES}; do
+            if [ ! -d "$m" ]; then
+              echo "skipping $m - not written yet"
+              continue
+            fi
+            secret="TFVARS_$(printf '%s' "$m" | tr '[:lower:]-' '[:upper:]_')"
+            items="${items}{\"module\":\"$m\",\"state_key\":\"shared/$m/terraform.tfstate\",\"tfvars_secret\":\"$secret\"},"
+          done
+          matrix="[${items%,}]"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          if [ "$matrix" = "[]" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "resolved: $matrix"
+
   plan:
     name: plan (${{ matrix.module }})
+    needs: modules
+    if: needs.modules.outputs.any == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - module: bootstrap
-            state_key: shared/bootstrap/terraform.tfstate
-            tfvars_secret: TFVARS_BOOTSTRAP
-          - module: iam
-            state_key: shared/iam/terraform.tfstate
-            tfvars_secret: TFVARS_IAM
+        include: ${{ fromJSON(needs.modules.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -96,7 +145,13 @@ jobs:
       # variable here would publish the account ids and alert addresses on every
       # run. Secrets are masked.
       - name: Materialise variables
-        run: printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+        run: |
+          if [ -z "${TFVARS}" ]; then
+            echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
+            echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
+            exit 1
+          fi
+          printf '%s\n' "${TFVARS}" > ci.auto.tfvars
         working-directory: ${{ matrix.module }}
         env:
           TFVARS: ${{ secrets[matrix.tfvars_secret] }}
@@ -118,23 +173,21 @@ jobs:
 
   apply:
     name: apply (${{ matrix.module }})
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.modules.outputs.any == 'true'
+    needs: [modules, plan]
     runs-on: ubuntu-latest
     # The environment is the second gate. Configure it with required reviewers -
     # the apply role's trust policy names it explicitly.
     environment: aws-apply
+    # Serial, in the declared dependency order: bootstrap owns the state bucket
+    # and the KMS key, iam owns the boundary that identity depends on, network
+    # comes after both. Parallel applies here would race on nothing today and on
+    # everything the moment a layer starts reading another's remote state.
     strategy:
       fail-fast: true
       max-parallel: 1
       matrix:
-        include:
-          - module: iam
-            state_key: shared/iam/terraform.tfstate
-            tfvars_secret: TFVARS_IAM
-          - module: bootstrap
-            state_key: shared/bootstrap/terraform.tfstate
-            tfvars_secret: TFVARS_BOOTSTRAP
+        include: ${{ fromJSON(needs.modules.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -164,7 +217,13 @@ jobs:
       # variable here would publish the account ids and alert addresses on every
       # run. Secrets are masked.
       - name: Materialise variables
-        run: printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+        run: |
+          if [ -z "${TFVARS}" ]; then
+            echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
+            echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
+            exit 1
+          fi
+          printf '%s\n' "${TFVARS}" > ci.auto.tfvars
         working-directory: ${{ matrix.module }}
         env:
           TFVARS: ${{ secrets[matrix.tfvars_secret] }}
