@@ -30,14 +30,18 @@ aws sts assume-role \
 
 ## Layout
 
-| Directory | Owner | Contents |
-|---|---|---|
-| `bootstrap/` | `@cto` | *(workload account)* | State backend, KMS, budget, cost anomaly detection, CloudTrail, account baseline |
-| `iam/` | `@security` | GitHub OIDC provider and the plan / apply roles |
-| `network/` | `@infra` | VPC, subnets, NAT, endpoints, Route 53 — *not written yet, Wave 1 epic* |
-| `eks/` | `@infra` | Cluster, node groups, Pod Identity — *not written yet, Wave 2 epic* |
-| `ecr/` | `@infra` | Registries and lifecycle policies — *not written yet* |
-| `bedrock/` | `@bedrock` | Model access, guardrails, VPC endpoints — *not written yet, Wave 7 epic* |
+| Directory | Runs in | Owner | Contents |
+|---|---|---|---|
+| `bootstrap/` | workload | `@cto` | State backend, KMS, access logs, CloudTrail, account baseline |
+| `budgets/` | **management** | `@cto` | Org ceiling, per-account budgets, anomaly detection, freeze SCP |
+| `iam/` | workload | `@security` | GitHub OIDC provider and the plan / apply roles |
+| `network/` | workload | `@infra` | VPC, subnets, NAT, endpoints, Route 53 — *not written yet, Wave 1 epic* |
+| `eks/` | workload | `@infra` | Cluster, node groups, Pod Identity — *not written yet, Wave 2 epic* |
+| `ecr/` | workload | `@infra` | Registries and lifecycle policies — *not written yet* |
+| `bedrock/` | workload | `@bedrock` | Model access, guardrails, VPC endpoints — *not written yet, Wave 7 epic* |
+
+`budgets/` is the only configuration that runs in the management account, and it
+has to: Organizations, SCPs and budget actions exist nowhere else.
 
 ## First apply: the two-phase bootstrap
 
