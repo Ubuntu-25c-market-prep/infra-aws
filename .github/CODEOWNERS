@@ -1,0 +1,7 @@
+# Terraform for AWS primitives. Path ownership follows the workstream that owns the resource.
+/network/    @Ubuntu-25c-market-prep/infra
+/eks/        @Ubuntu-25c-market-prep/infra
+/ecr/        @Ubuntu-25c-market-prep/infra
+/iam/        @Ubuntu-25c-market-prep/security
+/bedrock/    @Ubuntu-25c-market-prep/bedrock
+*            @Ubuntu-25c-market-prep/cto
