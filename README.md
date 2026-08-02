@@ -198,9 +198,16 @@ gh variable set AWS_PLAN_ROLE_ARN  --body "$(terraform -chdir=iam output -raw pl
 gh variable set AWS_APPLY_ROLE_ARN --body "$(terraform -chdir=iam output -raw apply_role_arn)"
 ```
 
-Because `terraform.tfvars` is gitignored and this repository is public, CI reads
-the same content from repository variables `TFVARS_BOOTSTRAP` and `TFVARS_IAM`
-and writes it to a file on the runner.
+Because `terraform.tfvars` is gitignored and this repository is public, CI
+reconstructs it on the runner from two **secrets** — not variables. GitHub prints
+a step's `env` block into the workflow log, and the logs of a public repository
+are public, so a variable would publish the account ids and alert addresses on
+every run:
+
+```bash
+gh secret set TFVARS_BOOTSTRAP < bootstrap/terraform.tfvars
+gh secret set TFVARS_IAM       < iam/terraform.tfvars
+```
 
 **CI covers the workload-account layers only.** Both OIDC roles live in
 `808540602855`, so `budgets/`, `organization/` and `identity/` stay CTO-local

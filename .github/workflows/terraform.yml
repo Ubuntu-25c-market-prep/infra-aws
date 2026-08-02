@@ -48,10 +48,10 @@ jobs:
         include:
           - module: bootstrap
             state_key: shared/bootstrap/terraform.tfstate
-            tfvars_var: TFVARS_BOOTSTRAP
+            tfvars_secret: TFVARS_BOOTSTRAP
           - module: iam
             state_key: shared/iam/terraform.tfstate
-            tfvars_var: TFVARS_IAM
+            tfvars_secret: TFVARS_IAM
 
     steps:
       - uses: actions/checkout@v4
@@ -88,14 +88,18 @@ jobs:
         working-directory: ${{ matrix.module }}
 
       # terraform.tfvars is gitignored - it carries account ids and email
-      # addresses and this repository is public. CI reconstructs the inputs from
-      # a repository variable holding the same content, written to a file that
-      # never leaves the runner.
+      # addresses and this repository is public. CI reconstructs the inputs into
+      # a file that never leaves the runner.
+      #
+      # A SECRET, not a variable. GitHub prints a step's env block into the
+      # workflow log, and the logs of a public repository are public - a
+      # variable here would publish the account ids and alert addresses on every
+      # run. Secrets are masked.
       - name: Materialise variables
         run: printf '%s\n' "${TFVARS}" > ci.auto.tfvars
         working-directory: ${{ matrix.module }}
         env:
-          TFVARS: ${{ vars[matrix.tfvars_var] }}
+          TFVARS: ${{ secrets[matrix.tfvars_secret] }}
 
       - name: Plan
         run: terraform plan -input=false -no-color -lock-timeout=5m -out=tf.plan
@@ -127,10 +131,10 @@ jobs:
         include:
           - module: iam
             state_key: shared/iam/terraform.tfstate
-            tfvars_var: TFVARS_IAM
+            tfvars_secret: TFVARS_IAM
           - module: bootstrap
             state_key: shared/bootstrap/terraform.tfstate
-            tfvars_var: TFVARS_BOOTSTRAP
+            tfvars_secret: TFVARS_BOOTSTRAP
 
     steps:
       - uses: actions/checkout@v4
@@ -155,11 +159,15 @@ jobs:
             -backend-config="use_lockfile=true"
         working-directory: ${{ matrix.module }}
 
+      # A SECRET, not a variable. GitHub prints a step's env block into the
+      # workflow log, and the logs of a public repository are public - a
+      # variable here would publish the account ids and alert addresses on every
+      # run. Secrets are masked.
       - name: Materialise variables
         run: printf '%s\n' "${TFVARS}" > ci.auto.tfvars
         working-directory: ${{ matrix.module }}
         env:
-          TFVARS: ${{ vars[matrix.tfvars_var] }}
+          TFVARS: ${{ secrets[matrix.tfvars_secret] }}
 
       # Planned and applied in one step on purpose. A plan file from the pull
       # request would be stale by the time review finishes, and applying a stale
