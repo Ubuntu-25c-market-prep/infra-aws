@@ -1,12 +1,21 @@
-# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored and blocked
-# by the security workflow - never commit it.
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
+#
+# Runs in the WORKLOAD account. Assume into it from management first:
+#   aws sts assume-role \
+#     --role-arn arn:aws:iam::808540602855:role/OrganizationAccountAccessRole \
+#     --role-session-name bootstrap
 
-account_id   = "909783398044"
-region       = "us-east-1"
-org_prefix   = "u25c"
+account_id = "808540602855" # Dev - the single workload account
+region     = "us-east-1"
+org_prefix = "u25c"
 
-monthly_budget_usd    = "2500"
-anomaly_threshold_usd = 50
+# The management account runs budgets/ but stores its state in this bucket.
+state_reader_account_ids = ["909783398044"]
+
+# Account-level budget. The org-wide ceiling with the enforcing freeze action
+# lives in budgets/, which runs in the management account.
+monthly_budget_usd    = "200"
+anomaly_threshold_usd = 25
 
 alert_emails = [
   "tishbekaslan@gmail.com",

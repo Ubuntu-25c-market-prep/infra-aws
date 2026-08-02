@@ -1,26 +1,27 @@
 # Copy to terraform.tfvars. Never commit terraform.tfvars.
+#
+# Runs in the MANAGEMENT account - Organizations, SCPs and budget actions exist
+# nowhere else. State is kept in the workload account's bucket so there is one
+# backend; bootstrap grants this account access via state_reader_account_ids.
 
 management_account_id = "909783398044"
 region                = "us-east-1"
 org_prefix            = "u25c"
 
-# Member accounts only. The management account cannot be governed by an SCP.
+# One workload account. The management account is deliberately absent - an SCP
+# attached to it would do nothing.
 workload_account_ids = [
-  "808540602855", # Dev
-  "972379852819", # Staging
-  "829860303036", # Prod
+  "808540602855", # Dev - the single workload account
 ]
 
-# Nothing is deployed yet, so start low. Raise it deliberately as waves land -
-# the full platform cost model is roughly $2,400/month.
+# Nothing is deployed yet, so start low and raise it deliberately as waves land.
+# The full single-cluster cost model is roughly $2,225/month.
 monthly_ceiling_usd      = "200"
 freeze_threshold_percent = 100
 freeze_approval_model    = "AUTOMATIC"
 
 per_account_ceilings_usd = {
-  "808540602855" = "100" # Dev
-  "972379852819" = "60"  # Staging
-  "829860303036" = "80"  # Prod
+  "808540602855" = "200"
 }
 
 anomaly_threshold_usd = 25

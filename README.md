@@ -2,15 +2,37 @@
 
 Terraform for the platform AWS account. **Nothing here has been applied.**
 
-Account `909783398044`, region `us-east-1`. Every configuration sets
-`allowed_account_ids`, so an apply against the wrong account fails immediately
-rather than half-succeeding.
+Region `us-east-1`. Every configuration sets `allowed_account_ids`, so an apply
+against the wrong account fails immediately rather than half-succeeding.
+
+## Account topology
+
+One workload account, one cluster, environments as namespaces.
+
+| Account | Role | What runs there |
+|---|---|---|
+| `808540602855` (Dev) | **workload** | Everything: state backend, IAM/OIDC, VPC, the cluster |
+| `909783398044` | **management only** | Organizations, Identity Center, budgets and the freeze SCP |
+
+The split is not bureaucracy. **SCPs have no effect on the management account**,
+so anything built there cannot be protected by the budget freeze. Keeping
+workloads in a member account is what makes the cost ceiling enforceable.
+
+`972379852819` (Staging) and `829860303036` (Prod) stay dormant and cost nothing.
+
+Reach the workload account from management with:
+
+```bash
+aws sts assume-role \
+  --role-arn arn:aws:iam::808540602855:role/OrganizationAccountAccessRole \
+  --role-session-name platform
+```
 
 ## Layout
 
 | Directory | Owner | Contents |
 |---|---|---|
-| `bootstrap/` | `@cto` | State backend, KMS, budget, cost anomaly detection, CloudTrail, account baseline |
+| `bootstrap/` | `@cto` | *(workload account)* | State backend, KMS, budget, cost anomaly detection, CloudTrail, account baseline |
 | `iam/` | `@security` | GitHub OIDC provider and the plan / apply roles |
 | `network/` | `@infra` | VPC, subnets, NAT, endpoints, Route 53 — *not written yet, Wave 1 epic* |
 | `eks/` | `@infra` | Cluster, node groups, Pod Identity — *not written yet, Wave 2 epic* |
@@ -63,7 +85,7 @@ where the account can spend without a budget watching it.
 - **Audit** — multi-region CloudTrail with log file validation, KMS-encrypted.
 - **Baseline** — account-level S3 public access block, EBS encryption by default, IAM password policy.
 
-Default budget is **$2,500/month**, matching the platform cost model. Change
+Default budget is **$200/month**, deliberately low while nothing is deployed.
 `monthly_budget_usd` before applying if that is not your ceiling.
 
 ## What iam creates

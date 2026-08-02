@@ -79,6 +79,16 @@ resource "aws_kms_key" "platform" {
         }
       },
       {
+        Sid    = "AllowStateReaderAccounts"
+        Effect = "Allow"
+        Principal = {
+          AWS = [for a in var.state_reader_account_ids :
+          "arn:${data.aws_partition.current.partition}:iam::${a}:root"]
+        }
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+        Resource = "*"
+      },
+      {
         # S3 server access logging writes into a CMK-encrypted bucket.
         Sid       = "AllowS3LogDelivery"
         Effect    = "Allow"
@@ -247,18 +257,38 @@ resource "aws_s3_bucket_logging" "tfstate" {
   target_prefix = "tfstate/"
 }
 
-resource "aws_s3_bucket_policy" "tfstate_tls_only" {
+resource "aws_s3_bucket_policy" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Sid       = "DenyInsecureTransport"
-      Effect    = "Deny"
-      Principal = "*"
-      Action    = "s3:*"
-      Resource  = [aws_s3_bucket.tfstate.arn, "${aws_s3_bucket.tfstate.arn}/*"]
-      Condition = { Bool = { "aws:SecureTransport" = "false" } }
-    }]
+    Statement = concat(
+      [{
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource  = [aws_s3_bucket.tfstate.arn, "${aws_s3_bucket.tfstate.arn}/*"]
+        Condition = { Bool = { "aws:SecureTransport" = "false" } }
+      }],
+      # The budgets configuration runs in the management account (Organizations,
+      # SCPs and budget actions only exist there) but keeps its state in this
+      # bucket, so there is one state backend rather than two.
+      length(var.state_reader_account_ids) == 0 ? [] : [{
+        Sid    = "AllowManagementAccountState"
+        Effect = "Allow"
+        Principal = {
+          AWS = [for a in var.state_reader_account_ids :
+          "arn:${data.aws_partition.current.partition}:iam::${a}:root"]
+        }
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+        ]
+        Resource = [aws_s3_bucket.tfstate.arn, "${aws_s3_bucket.tfstate.arn}/*"]
+      }]
+    )
   })
 }
 

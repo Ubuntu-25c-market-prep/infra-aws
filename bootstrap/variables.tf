@@ -51,3 +51,13 @@ variable "cloudwatch_retention_days" {
   type        = number
   default     = 90
 }
+
+variable "state_reader_account_ids" {
+  description = <<-EOT
+    Other accounts allowed to read and write state in this bucket. In practice
+    this is the organisation management account, which runs budgets/ but keeps
+    its state here so there is one backend rather than two. Empty disables it.
+  EOT
+  type        = list(string)
+  default     = []
+}
