@@ -23,4 +23,8 @@ alert_emails = [
 
 # Set to your organisation id to make the trail an ORGANISATION trail. Requires
 # this account to be a CloudTrail delegated administrator - see ../organization.
-organization_id = ""
+organization_id                    = ""
+# Required when organization_id is set - the org trail ARN lives here.
+organization_management_account_id = ""
+# Every account the org trail captures - each needs to be in the KMS encryption context.
+organization_member_account_ids    = []
