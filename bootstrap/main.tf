@@ -516,6 +516,34 @@ resource "aws_iam_role_policy" "cloudtrail_cw" {
 # Requires, in the management account: cloudtrail.amazonaws.com enabled for
 # organisation access, and this account registered as delegated administrator.
 # ../organization does both.
+#
+# STATUS: organization_id is deliberately empty. Setting it does not work yet.
+#
+# Three attempts, three findings, in the order they surfaced:
+#
+#   1. A delegated administrator cannot CONVERT an account-level trail into an
+#      organisation trail - management account only. So the trail has to be
+#      replaced, not updated.
+#   2. Replacing it needs cloudtrail:DeleteTrail, which the workloads-OU SCP
+#      denies. Every attempt therefore costs a break-glass detach and a window
+#      with no trail. That guardrail is correct; the workflow around it is not.
+#   3. CreateTrail then fails with InsufficientEncryptionPolicyException. Every
+#      documented requirement is now satisfied - both trail-owner ARNs in the
+#      bucket policy and the KMS encryption context, kms:Decrypt for the S3
+#      Bucket Key, all four member accounts in the encryption context. It still
+#      fails, and the error names the bucket and the key without saying which.
+#
+# The untested hypothesis is that an organisation trail cannot use an SSE-KMS
+# key owned by a member account: the trail resource belongs to the management
+# account, and AWS documents that the S3 bucket "can belong to any account"
+# while saying no such thing about the key. Confirming it means moving the key
+# and bucket into management - which puts the audit trail somewhere SCPs cannot
+# protect it - or dropping SSE-KMS. Both are design changes, not fixes, and
+# neither should happen without an ADR.
+#
+# Until then Dev, where everything actually runs, is fully audited by this
+# account-level trail. Staging and Prod are frozen by SCP and management is
+# nearly idle; all three keep 90-day CloudTrail Event history regardless.
 resource "aws_cloudtrail" "main" {
   name                          = local.trail
   s3_bucket_name                = aws_s3_bucket.cloudtrail.id
