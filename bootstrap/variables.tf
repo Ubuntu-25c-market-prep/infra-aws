@@ -19,6 +19,55 @@ variable "org_prefix" {
   default     = "u25c"
 }
 
+variable "organization_management_account_id" {
+  description = <<-EOT
+    Management account of the organisation. Required when organization_id is set.
+
+    An organisation trail belongs to the MANAGEMENT account even when a delegated
+    administrator creates it, so the trail ARN that CloudTrail presents to this
+    bucket and to KMS is in that account, not in this one. Without it here, both
+    policies reject the trail and creation fails with
+    InsufficientS3BucketPolicyException.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.organization_management_account_id == "" || can(regex("^[0-9]{12}$", var.organization_management_account_id))
+    error_message = "Must be empty or a 12-digit AWS account id."
+  }
+}
+
+variable "organization_member_account_ids" {
+  description = <<-EOT
+    Every account the organisation trail will capture. Used only to widen the KMS
+    encryption context - an organisation trail encrypts on behalf of each member
+    account, and an account missing from this list has its events dropped rather
+    than rejected, so the trail looks healthy while losing data.
+
+    Ignored when organization_id is empty.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "organization_id" {
+  description = <<-EOT
+    Organisation to capture with the CloudTrail trail. Setting it converts the
+    account trail into an ORGANISATION trail covering every member account.
+
+    Requires this account to be a registered CloudTrail delegated administrator -
+    see ../organization. Empty string keeps the trail account-scoped.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.organization_id == "" || can(regex("^o-[a-z0-9]{10,32}$", var.organization_id))
+    error_message = "Must be empty or an organisation id of the form o-xxxxxxxxxx."
+  }
+}
+
 variable "monthly_budget_usd" {
   description = "Monthly cost budget. Notifications fire at 50%, 80%, 100% actual and 100% forecast."
   type        = string

@@ -56,6 +56,30 @@ locals {
   name   = "${var.org_prefix}-shared"
   bucket = "${var.org_prefix}-tfstate-${var.account_id}"
   trail  = "${var.org_prefix}-cloudtrail-${var.account_id}"
+
+  # An organisation trail belongs to the MANAGEMENT account even when a
+  # delegated administrator creates it, so the SourceArn CloudTrail presents to
+  # S3 and KMS is in that account. Both are listed because the trail is an
+  # account-level trail until organization_id is set, and the account-level ARN
+  # must keep working while it is.
+  trail_owner_account_ids = compact([
+    var.account_id,
+    var.organization_management_account_id,
+  ])
+
+  trail_arns = [
+    for a in local.trail_owner_account_ids :
+    "arn:${data.aws_partition.current.partition}:cloudtrail:${var.region}:${a}:trail/${local.trail}"
+  ]
+
+  # An organisation trail encrypts log files ON BEHALF OF every member account,
+  # so each one needs to appear in the KMS encryption context. Listing only the
+  # trail owner works for an account-level trail and silently stops working the
+  # moment the trail goes organisation-wide.
+  trail_encryption_account_ids = distinct(concat(
+    local.trail_owner_account_ids,
+    var.organization_id == "" ? [] : var.organization_member_account_ids,
+  ))
 }
 
 ###############################################################################
@@ -81,11 +105,19 @@ resource "aws_kms_key" "platform" {
         Sid       = "AllowCloudTrailEncrypt"
         Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
-        Action    = ["kms:GenerateDataKey*", "kms:DescribeKey"]
-        Resource  = "*"
+        # kms:Decrypt is not optional here. The trail bucket has
+        # bucket_key_enabled, and AWS requires kms:Decrypt to create or update a
+        # trail with SSE-KMS against a bucket using an S3 Bucket Key. Without it
+        # CreateTrail fails with InsufficientEncryptionPolicyException, which
+        # names the bucket and the key and says nothing about which one.
+        Action   = ["kms:GenerateDataKey*", "kms:DescribeKey", "kms:Decrypt"]
+        Resource = "*"
         Condition = {
           StringLike = {
-            "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:${data.aws_partition.current.partition}:cloudtrail:*:${var.account_id}:trail/*"
+            "kms:EncryptionContext:aws:cloudtrail:arn" = [
+              for a in local.trail_encryption_account_ids :
+              "arn:${data.aws_partition.current.partition}:cloudtrail:*:${a}:trail/*"
+            ]
           }
         }
       },
@@ -402,7 +434,7 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
         Resource  = aws_s3_bucket.cloudtrail.arn
         Condition = {
           StringEquals = {
-            "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:cloudtrail:${var.region}:${var.account_id}:trail/${local.trail}"
+            "aws:SourceArn" = local.trail_arns
           }
         }
       },
@@ -411,11 +443,18 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
         Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
         Action    = "s3:PutObject"
-        Resource  = "${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${var.account_id}/*"
+        # An organisation trail writes member-account logs under the ORG id, not
+        # under each account id. Without the second prefix the trail turns on,
+        # reports healthy, and silently delivers nothing for every account except
+        # this one.
+        Resource = compact([
+          "${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${var.account_id}/*",
+          var.organization_id == "" ? "" : "${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${var.organization_id}/*",
+        ])
         Condition = {
           StringEquals = {
             "s3:x-amz-acl"  = "bucket-owner-full-control"
-            "aws:SourceArn" = "arn:${data.aws_partition.current.partition}:cloudtrail:${var.region}:${var.account_id}:trail/${local.trail}"
+            "aws:SourceArn" = local.trail_arns
           }
         }
       }
@@ -437,10 +476,11 @@ data "aws_iam_policy_document" "cloudtrail_cw_trust" {
       type        = "Service"
       identifiers = ["cloudtrail.amazonaws.com"]
     }
+    # Both owners, for the same reason the bucket policy lists both trail ARNs.
     condition {
       test     = "StringEquals"
       variable = "aws:SourceAccount"
-      values   = [var.account_id]
+      values   = local.trail_owner_account_ids
     }
   }
 }
@@ -467,11 +507,49 @@ resource "aws_iam_role_policy" "cloudtrail_cw" {
 # Logs go to S3 for durable retention AND to CloudWatch, where a metric filter
 # can alarm on events in near real time. S3 alone gives you forensics after the
 # fact; CloudWatch is what lets you notice while it is happening.
+#
+# As an ORGANISATION trail it also captures Staging, Prod and the management
+# account, into this bucket, with no per-account setup and no extra cost - AWS
+# bills the first copy of management events at zero. A member account cannot turn
+# it off or exclude itself, which is the property that makes it evidence.
+#
+# Requires, in the management account: cloudtrail.amazonaws.com enabled for
+# organisation access, and this account registered as delegated administrator.
+# ../organization does both.
+#
+# STATUS: organization_id is deliberately empty. Setting it does not work yet.
+#
+# Three attempts, three findings, in the order they surfaced:
+#
+#   1. A delegated administrator cannot CONVERT an account-level trail into an
+#      organisation trail - management account only. So the trail has to be
+#      replaced, not updated.
+#   2. Replacing it needs cloudtrail:DeleteTrail, which the workloads-OU SCP
+#      denies. Every attempt therefore costs a break-glass detach and a window
+#      with no trail. That guardrail is correct; the workflow around it is not.
+#   3. CreateTrail then fails with InsufficientEncryptionPolicyException. Every
+#      documented requirement is now satisfied - both trail-owner ARNs in the
+#      bucket policy and the KMS encryption context, kms:Decrypt for the S3
+#      Bucket Key, all four member accounts in the encryption context. It still
+#      fails, and the error names the bucket and the key without saying which.
+#
+# The untested hypothesis is that an organisation trail cannot use an SSE-KMS
+# key owned by a member account: the trail resource belongs to the management
+# account, and AWS documents that the S3 bucket "can belong to any account"
+# while saying no such thing about the key. Confirming it means moving the key
+# and bucket into management - which puts the audit trail somewhere SCPs cannot
+# protect it - or dropping SSE-KMS. Both are design changes, not fixes, and
+# neither should happen without an ADR.
+#
+# Until then Dev, where everything actually runs, is fully audited by this
+# account-level trail. Staging and Prod are frozen by SCP and management is
+# nearly idle; all three keep 90-day CloudTrail Event history regardless.
 resource "aws_cloudtrail" "main" {
   name                          = local.trail
   s3_bucket_name                = aws_s3_bucket.cloudtrail.id
   include_global_service_events = true
   is_multi_region_trail         = true
+  is_organization_trail         = var.organization_id != ""
   enable_log_file_validation    = true
   kms_key_id                    = aws_kms_key.platform.arn
 

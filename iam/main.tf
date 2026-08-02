@@ -17,6 +17,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.70"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   # Populated after bootstrap. See ../README.md.
@@ -55,23 +59,46 @@ locals {
   ]
 
   oidc_arn = "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:oidc-provider/token.actions.githubusercontent.com"
+
+  # This organisation issues OIDC tokens in GitHub's IMMUTABLE ID format, so the
+  # sub claim is not `repo:<org>/<repo>:<context>` but:
+  #
+  #   repo:Ubuntu-25c-market-prep@311938159/infra-aws@1319733777:pull_request
+  #
+  # A trust policy written against the documented plain format matches nothing
+  # and fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity` - an
+  # authorization error that points you at the trust policy's *contents* rather
+  # than its shape. If you ever need to see the real claim, it is the userName
+  # field of the failed event in CloudTrail.
+  #
+  # The org id is pinned because that is the property worth pinning: an attacker
+  # who creates an organisation named Ubuntu-25c-market-prep after a rename
+  # cannot reuse the id. Repo ids are wildcarded so a repo created later works
+  # without a lookup - repository names cannot contain "@", so `infra-aws@*`
+  # cannot match anything but this repo's id.
+  org_subject_prefix = "repo:${var.github_org}@${var.github_org_id}"
 }
 
 ###############################################################################
 # OIDC provider
 ###############################################################################
 
+# Read at plan time rather than pinned. A hardcoded thumbprint becomes an outage
+# the day GitHub rotates its CA; the placeholder it replaced relied on AWS
+# ignoring the value entirely, which is true but undocumented enough to be worth
+# not depending on. This was not the cause of any failure - see the sub claim
+# note above for that.
+data "tls_certificate" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
 resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
 
-  # AWS validates GitHub's certificate chain natively; a pinned thumbprint is no
-  # longer required and became an outage source when GitHub rotated its CA.
-  thumbprint_list = ["ffffffffffffffffffffffffffffffffffffffff"]
-
-  lifecycle {
-    ignore_changes = [thumbprint_list]
-  }
+  thumbprint_list = [
+    data.tls_certificate.github.certificates[length(data.tls_certificate.github.certificates) - 1].sha1_fingerprint
+  ]
 }
 
 ###############################################################################
@@ -99,7 +126,7 @@ data "aws_iam_policy_document" "plan_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [for r in local.plan_repos : "repo:${var.github_org}/${r}:*"]
+      values   = [for r in local.plan_repos : "${local.org_subject_prefix}/${r}@*:*"]
     }
   }
 }
@@ -162,8 +189,8 @@ data "aws_iam_policy_document" "apply_trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_org}/infra-aws:ref:refs/heads/main",
-        "repo:${var.github_org}/infra-aws:environment:aws-apply",
+        "${local.org_subject_prefix}/infra-aws@${var.infra_aws_repo_id}:ref:refs/heads/main",
+        "${local.org_subject_prefix}/infra-aws@${var.infra_aws_repo_id}:environment:aws-apply",
       ]
     }
   }
@@ -214,4 +241,91 @@ resource "aws_iam_role_policy" "apply_guardrails" {
   name   = "guardrails"
   role   = aws_iam_role.apply.id
   policy = data.aws_iam_policy_document.apply_guardrails.json
+}
+
+###############################################################################
+# Engineer permissions boundary
+#
+# Consumed by ../identity, which attaches it to the PlatformEngineer permission
+# set and requires it on every role an engineer creates. It has to live here
+# because a boundary is resolved in the account the session runs in, and
+# ../identity runs in management.
+#
+# A boundary is an INTERSECTION, not a deny list. A policy containing only Deny
+# statements grants nothing and would leave every engineer session with zero
+# permissions - hence the explicit Allow on everything, narrowed by the denies
+# below. Those denies mirror the workloads-OU SCP on purpose: the ceiling a
+# person works under and the ceiling a role they create works under should be
+# the same ceiling, or the difference becomes an escalation path.
+###############################################################################
+
+data "aws_iam_policy_document" "engineer_boundary" {
+  statement {
+    sid       = "AllowEverythingTheSCPPermits"
+    effect    = "Allow"
+    actions   = ["*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "NoLongLivedCredentials"
+    effect = "Deny"
+    actions = [
+      "iam:CreateUser",
+      "iam:CreateAccessKey",
+      "iam:CreateLoginProfile",
+      "iam:PutUserPermissionsBoundary",
+      "iam:DeleteUserPermissionsBoundary",
+      "iam:DeleteRolePermissionsBoundary",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ProtectAuditAndAccount"
+    effect = "Deny"
+    actions = [
+      "cloudtrail:DeleteTrail",
+      "cloudtrail:StopLogging",
+      "kms:ScheduleKeyDeletion",
+      "kms:DisableKey",
+      "iam:DeleteAccountPasswordPolicy",
+      "organizations:LeaveOrganization",
+      "account:CloseAccount",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ProtectStateAndAuditBuckets"
+    effect = "Deny"
+    actions = [
+      "s3:DeleteBucket",
+      "s3:DeleteBucketPolicy",
+      "s3:PutBucketPublicAccessBlock",
+    ]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:s3:::${var.org_prefix}-tfstate-*",
+      "arn:${data.aws_partition.current.partition}:s3:::${var.org_prefix}-cloudtrail-*",
+      "arn:${data.aws_partition.current.partition}:s3:::${var.org_prefix}-s3-access-logs-*",
+    ]
+  }
+
+  statement {
+    sid     = "ProtectPrivilegedRoles"
+    effect  = "Deny"
+    actions = ["iam:*Role*", "iam:*RolePolicy*", "iam:*PermissionsBoundary*"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:role/${local.name}-gha-*",
+      "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:role/OrganizationAccountAccessRole",
+      "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:role/aws-reserved/sso.amazonaws.com/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "engineer_boundary" {
+  name        = "${var.org_prefix}-engineer-boundary"
+  path        = "/"
+  description = "Permissions boundary for Identity Center engineers and the roles they create"
+  policy      = data.aws_iam_policy_document.engineer_boundary.json
 }

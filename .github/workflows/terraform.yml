@@ -1,0 +1,177 @@
+###############################################################################
+# Terraform plan on every pull request, apply on main.
+#
+# WHAT THIS COVERS, AND WHAT IT DOES NOT
+#
+# Only the configurations that run in the WORKLOAD account. Both OIDC roles live
+# there, so CI has no credentials for the management account at all. That leaves
+# budgets/, organization/ and identity/ as CTO-local applies until somebody adds
+# an OIDC provider and a pair of roles to the management account.
+#
+# This is a real gap, not an oversight. Organizations, SCPs and Identity Center
+# are precisely the things where an automated apply from a merged pull request
+# has the largest blast radius, and they change roughly twice a term.
+#
+# The asymmetry between plan and apply is the security model - see iam/main.tf.
+# A pull request renders a plan with a read-only role. Only main, through the
+# aws-apply environment, can touch the account.
+###############################################################################
+
+name: Terraform
+
+on:
+  pull_request:
+    paths: ["bootstrap/**", "iam/**", ".github/workflows/terraform.yml"]
+  push:
+    branches: [main]
+    paths: ["bootstrap/**", "iam/**", ".github/workflows/terraform.yml"]
+
+# id-token is what makes OIDC work. Without it there is no token to exchange and
+# the role assumption fails with a message that does not mention this line.
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.10.5"
+  AWS_REGION: us-east-1
+  STATE_BUCKET: u25c-tfstate-808540602855
+
+jobs:
+  plan:
+    name: plan (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: bootstrap
+            state_key: shared/bootstrap/terraform.tfstate
+            tfvars_secret: TFVARS_BOOTSTRAP
+          - module: iam
+            state_key: shared/iam/terraform.tfstate
+            tfvars_secret: TFVARS_IAM
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff
+        working-directory: ${{ matrix.module }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # bootstrap/ carries a committed backend block; the rest are partial and
+      # take their configuration here. Passing -backend-config to a module that
+      # already has a full block is harmless as long as the values agree.
+      - name: Init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=${{ matrix.state_key }}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+        working-directory: ${{ matrix.module }}
+
+      - name: Validate
+        run: terraform validate
+        working-directory: ${{ matrix.module }}
+
+      # terraform.tfvars is gitignored - it carries account ids and email
+      # addresses and this repository is public. CI reconstructs the inputs into
+      # a file that never leaves the runner.
+      #
+      # A SECRET, not a variable. GitHub prints a step's env block into the
+      # workflow log, and the logs of a public repository are public - a
+      # variable here would publish the account ids and alert addresses on every
+      # run. Secrets are masked.
+      - name: Materialise variables
+        run: printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+        working-directory: ${{ matrix.module }}
+        env:
+          TFVARS: ${{ secrets[matrix.tfvars_secret] }}
+
+      - name: Plan
+        run: terraform plan -input=false -no-color -lock-timeout=5m -out=tf.plan
+        working-directory: ${{ matrix.module }}
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.module }}"
+            echo '```'
+            terraform show -no-color tf.plan 2>/dev/null | tail -60 || echo "no plan - see the step log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        working-directory: ${{ matrix.module }}
+
+  apply:
+    name: apply (${{ matrix.module }})
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: plan
+    runs-on: ubuntu-latest
+    # The environment is the second gate. Configure it with required reviewers -
+    # the apply role's trust policy names it explicitly.
+    environment: aws-apply
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        include:
+          - module: iam
+            state_key: shared/iam/terraform.tfstate
+            tfvars_secret: TFVARS_IAM
+          - module: bootstrap
+            state_key: shared/bootstrap/terraform.tfstate
+            tfvars_secret: TFVARS_BOOTSTRAP
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=${{ matrix.state_key }}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+        working-directory: ${{ matrix.module }}
+
+      # A SECRET, not a variable. GitHub prints a step's env block into the
+      # workflow log, and the logs of a public repository are public - a
+      # variable here would publish the account ids and alert addresses on every
+      # run. Secrets are masked.
+      - name: Materialise variables
+        run: printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+        working-directory: ${{ matrix.module }}
+        env:
+          TFVARS: ${{ secrets[matrix.tfvars_secret] }}
+
+      # Planned and applied in one step on purpose. A plan file from the pull
+      # request would be stale by the time review finishes, and applying a stale
+      # plan is how you delete something that came back.
+      - name: Apply
+        run: terraform apply -input=false -auto-approve -lock-timeout=5m
+        working-directory: ${{ matrix.module }}
