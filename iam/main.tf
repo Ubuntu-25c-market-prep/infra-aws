@@ -17,6 +17,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.70"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   # Populated after bootstrap. See ../README.md.
@@ -61,17 +65,21 @@ locals {
 # OIDC provider
 ###############################################################################
 
+# Read at plan time rather than pinned. A hardcoded thumbprint becomes an outage
+# the day GitHub rotates its CA, and the placeholder value that AWS is documented
+# to ignore produced `Not authorized to perform sts:AssumeRoleWithWebIdentity` on
+# every run - an authorization error that says nothing about certificates.
+data "tls_certificate" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
 resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
 
-  # AWS validates GitHub's certificate chain natively; a pinned thumbprint is no
-  # longer required and became an outage source when GitHub rotated its CA.
-  thumbprint_list = ["ffffffffffffffffffffffffffffffffffffffff"]
-
-  lifecycle {
-    ignore_changes = [thumbprint_list]
-  }
+  thumbprint_list = [
+    data.tls_certificate.github.certificates[length(data.tls_certificate.github.certificates) - 1].sha1_fingerprint
+  ]
 }
 
 ###############################################################################
