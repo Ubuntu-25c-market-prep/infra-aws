@@ -30,6 +30,21 @@ variable "org_prefix" {
   default     = "u25c"
 }
 
+variable "access_portal_subdomain" {
+  description = <<-EOT
+    Custom subdomain for the AWS access portal, without the domain - "ubuntu-25c"
+    gives https://ubuntu-25c.awsapps.com/start.
+
+    Set in the Identity Center console, once. There is no API and no Terraform
+    resource, and **the choice is irreversible**. This variable exists so the
+    portal URL this configuration reports is the one people actually use.
+
+    Empty string falls back to the default identity-store URL.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "sign_in_name_overrides" {
   description = <<-EOT
     Handle -> sign-in name, for people whose Identity Center account predates the

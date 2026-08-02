@@ -59,7 +59,7 @@ region         = us-east-1
 
 Everyone signs in at one link with their **GitHub handle** as the username:
 
-    https://d-90660f563d.awsapps.com/start
+    https://ubuntu-25c.awsapps.com/start
 
 Four roles, not fifteen. Which ones you see depends on your groups:
 

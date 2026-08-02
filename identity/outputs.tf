@@ -5,10 +5,14 @@ output "identity_store_id" {
 
 output "access_portal_url" {
   description = <<-EOT
-    The one link everybody signs in at. Customising the subdomain is a console
-    action and is IRREVERSIBLE - see ops-program/runbooks/onboard-to-aws.md.
+    The one link everybody signs in at. The subdomain is set in the console, is
+    irreversible, and is recorded here via access_portal_subdomain so this output
+    matches what people are actually told to open.
   EOT
-  value       = "https://${local.identity_store_id}.awsapps.com/start"
+  value = format(
+    "https://%s.awsapps.com/start",
+    var.access_portal_subdomain != "" ? var.access_portal_subdomain : local.identity_store_id,
+  )
 }
 
 output "permission_set_arns" {

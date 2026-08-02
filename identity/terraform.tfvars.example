@@ -8,6 +8,9 @@ workload_account_id   = "REPLACE-ME"
 region                = "us-east-1"
 org_prefix            = "u25c"
 
+# Custom AWS access portal subdomain, if one was set in the console. Irreversible.
+access_portal_subdomain = ""
+
 # Each user's address becomes "<email_prefix><github handle>@<email_domain>".
 # Plus-addressing on an address you control gives every user a unique, working
 # mailbox without asking sixteen people for their personal email.
