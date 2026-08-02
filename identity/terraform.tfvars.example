@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars. Never commit terraform.tfvars.
+#
+# Apply ../iam FIRST - the engineer permission set attaches a permissions
+# boundary that must already exist in the workload account.
+
+management_account_id = "REPLACE-ME"
+workload_account_id   = "REPLACE-ME"
+region                = "us-east-1"
+org_prefix            = "u25c"
+
+# Each user's address becomes "<email_prefix><github handle>@<email_domain>".
+# Plus-addressing on an address you control gives every user a unique, working
+# mailbox without asking sixteen people for their personal email.
+email_prefix = "you+u25c-"
+email_domain = "example.com"
+
+# Users that already exist in the console, so Terraform adopts rather than
+# duplicates them. Handle -> user id:
+#   aws identitystore list-users --identity-store-id d-xxxxxxxxxx \
+#     --query 'Users[].{Id:UserId,UserName:UserName}'
+existing_user_imports = {
+  # yourhandle = "00000000-0000-0000-0000-000000000000"
+}

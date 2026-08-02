@@ -20,3 +20,7 @@ anomaly_threshold_usd = 25
 alert_emails = [
   "tishbekaslan@gmail.com",
 ]
+
+# Set to your organisation id to make the trail an ORGANISATION trail. Requires
+# this account to be a CloudTrail delegated administrator - see ../organization.
+organization_id = ""

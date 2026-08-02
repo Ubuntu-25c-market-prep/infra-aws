@@ -19,6 +19,23 @@ variable "org_prefix" {
   default     = "u25c"
 }
 
+variable "organization_id" {
+  description = <<-EOT
+    Organisation to capture with the CloudTrail trail. Setting it converts the
+    account trail into an ORGANISATION trail covering every member account.
+
+    Requires this account to be a registered CloudTrail delegated administrator -
+    see ../organization. Empty string keeps the trail account-scoped.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.organization_id == "" || can(regex("^o-[a-z0-9]{10,32}$", var.organization_id))
+    error_message = "Must be empty or an organisation id of the form o-xxxxxxxxxx."
+  }
+}
+
 variable "monthly_budget_usd" {
   description = "Monthly cost budget. Notifications fire at 50%, 80%, 100% actual and 100% forecast."
   type        = string

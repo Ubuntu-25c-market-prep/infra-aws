@@ -7,6 +7,9 @@
 terraform.tfstate
 terraform.tfstate.*
 *.tfstate.backup
+# A saved plan carries the full resource payload, sensitive values included.
+tf.plan
+*.tfplan
 crash.log
 override.tf
 override.tf.json

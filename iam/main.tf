@@ -215,3 +215,90 @@ resource "aws_iam_role_policy" "apply_guardrails" {
   role   = aws_iam_role.apply.id
   policy = data.aws_iam_policy_document.apply_guardrails.json
 }
+
+###############################################################################
+# Engineer permissions boundary
+#
+# Consumed by ../identity, which attaches it to the PlatformEngineer permission
+# set and requires it on every role an engineer creates. It has to live here
+# because a boundary is resolved in the account the session runs in, and
+# ../identity runs in management.
+#
+# A boundary is an INTERSECTION, not a deny list. A policy containing only Deny
+# statements grants nothing and would leave every engineer session with zero
+# permissions - hence the explicit Allow on everything, narrowed by the denies
+# below. Those denies mirror the workloads-OU SCP on purpose: the ceiling a
+# person works under and the ceiling a role they create works under should be
+# the same ceiling, or the difference becomes an escalation path.
+###############################################################################
+
+data "aws_iam_policy_document" "engineer_boundary" {
+  statement {
+    sid       = "AllowEverythingTheSCPPermits"
+    effect    = "Allow"
+    actions   = ["*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "NoLongLivedCredentials"
+    effect = "Deny"
+    actions = [
+      "iam:CreateUser",
+      "iam:CreateAccessKey",
+      "iam:CreateLoginProfile",
+      "iam:PutUserPermissionsBoundary",
+      "iam:DeleteUserPermissionsBoundary",
+      "iam:DeleteRolePermissionsBoundary",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ProtectAuditAndAccount"
+    effect = "Deny"
+    actions = [
+      "cloudtrail:DeleteTrail",
+      "cloudtrail:StopLogging",
+      "kms:ScheduleKeyDeletion",
+      "kms:DisableKey",
+      "iam:DeleteAccountPasswordPolicy",
+      "organizations:LeaveOrganization",
+      "account:CloseAccount",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ProtectStateAndAuditBuckets"
+    effect = "Deny"
+    actions = [
+      "s3:DeleteBucket",
+      "s3:DeleteBucketPolicy",
+      "s3:PutBucketPublicAccessBlock",
+    ]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:s3:::${var.org_prefix}-tfstate-*",
+      "arn:${data.aws_partition.current.partition}:s3:::${var.org_prefix}-cloudtrail-*",
+      "arn:${data.aws_partition.current.partition}:s3:::${var.org_prefix}-s3-access-logs-*",
+    ]
+  }
+
+  statement {
+    sid     = "ProtectPrivilegedRoles"
+    effect  = "Deny"
+    actions = ["iam:*Role*", "iam:*RolePolicy*", "iam:*PermissionsBoundary*"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:role/${local.name}-gha-*",
+      "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:role/OrganizationAccountAccessRole",
+      "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:role/aws-reserved/sso.amazonaws.com/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "engineer_boundary" {
+  name        = "${var.org_prefix}-engineer-boundary"
+  path        = "/"
+  description = "Permissions boundary for Identity Center engineers and the roles they create"
+  policy      = data.aws_iam_policy_document.engineer_boundary.json
+}

@@ -1,0 +1,36 @@
+# Copy to terraform.tfvars. Never commit terraform.tfvars - it carries account
+# ids and the root email addresses of real AWS accounts.
+#
+#   aws organizations describe-organization
+#   aws organizations list-accounts
+#
+# name and email must match the live account character for character. They are
+# import inputs. Terraform is only setting parent_id.
+
+organization_id      = "o-REPLACE-ME"
+management_account_id = "REPLACE-ME"
+region                = "us-east-1"
+home_region           = "us-east-1"
+org_prefix            = "u25c"
+
+member_accounts = {
+  "REPLACE-DEV-ACCOUNT-ID" = {
+    name  = "Dev"
+    email = "you+dev@example.com"
+    ou    = "workloads"
+  }
+  "REPLACE-STAGING-ACCOUNT-ID" = {
+    name  = "Staging"
+    email = "you+staging@example.com"
+    ou    = "dormant"
+  }
+  "REPLACE-PROD-ACCOUNT-ID" = {
+    name  = "Prod"
+    email = "you+prod@example.com"
+    ou    = "dormant"
+  }
+}
+
+# The workload account, so the organisation trail can keep living where
+# bootstrap/ built it. Set to "" to skip the delegation.
+cloudtrail_delegated_admin_id = "REPLACE-DEV-ACCOUNT-ID"

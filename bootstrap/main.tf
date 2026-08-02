@@ -411,7 +411,14 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
         Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
         Action    = "s3:PutObject"
-        Resource  = "${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${var.account_id}/*"
+        # An organisation trail writes member-account logs under the ORG id, not
+        # under each account id. Without the second prefix the trail turns on,
+        # reports healthy, and silently delivers nothing for every account except
+        # this one.
+        Resource = compact([
+          "${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${var.account_id}/*",
+          var.organization_id == "" ? "" : "${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${var.organization_id}/*",
+        ])
         Condition = {
           StringEquals = {
             "s3:x-amz-acl"  = "bucket-owner-full-control"
@@ -467,11 +474,21 @@ resource "aws_iam_role_policy" "cloudtrail_cw" {
 # Logs go to S3 for durable retention AND to CloudWatch, where a metric filter
 # can alarm on events in near real time. S3 alone gives you forensics after the
 # fact; CloudWatch is what lets you notice while it is happening.
+#
+# As an ORGANISATION trail it also captures Staging, Prod and the management
+# account, into this bucket, with no per-account setup and no extra cost - AWS
+# bills the first copy of management events at zero. A member account cannot turn
+# it off or exclude itself, which is the property that makes it evidence.
+#
+# Requires, in the management account: cloudtrail.amazonaws.com enabled for
+# organisation access, and this account registered as delegated administrator.
+# ../organization does both.
 resource "aws_cloudtrail" "main" {
   name                          = local.trail
   s3_bucket_name                = aws_s3_bucket.cloudtrail.id
   include_global_service_events = true
   is_multi_region_trail         = true
+  is_organization_trail         = var.organization_id != ""
   enable_log_file_validation    = true
   kms_key_id                    = aws_kms_key.platform.arn
 
