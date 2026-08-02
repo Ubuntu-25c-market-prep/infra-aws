@@ -77,8 +77,102 @@ resource "aws_kms_key" "platform" {
             "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:${data.aws_partition.current.partition}:cloudtrail:*:${var.account_id}:trail/*"
           }
         }
+      },
+      {
+        # S3 server access logging writes into a CMK-encrypted bucket.
+        Sid       = "AllowS3LogDelivery"
+        Effect    = "Allow"
+        Principal = { Service = "logging.s3.amazonaws.com" }
+        Action    = ["kms:GenerateDataKey*", "kms:Decrypt"]
+        Resource  = "*"
+        Condition = {
+          StringEquals = { "aws:SourceAccount" = var.account_id }
+        }
+      },
+      {
+        Sid       = "AllowCloudWatchLogs"
+        Effect    = "Allow"
+        Principal = { Service = "logs.${var.region}.amazonaws.com" }
+        Action    = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"]
+        Resource  = "*"
+        Condition = {
+          ArnLike = {
+            "kms:EncryptionContext:aws:logs:arn" = "arn:${data.aws_partition.current.partition}:logs:${var.region}:${var.account_id}:log-group:*"
+          }
+        }
       }
     ]
+  })
+}
+
+###############################################################################
+# Access log bucket - the destination for S3 server access logging
+###############################################################################
+
+# The access-log bucket cannot log its own access without generating an infinite
+# feedback loop of log entries, which AWS explicitly warns against. Access to this
+# bucket is instead covered by CloudTrail S3 data events.
+#trivy:ignore:AWS-0089
+resource "aws_s3_bucket" "access_logs" {
+  bucket = "${var.org_prefix}-s3-access-logs-${var.account_id}"
+}
+
+resource "aws_s3_bucket_versioning" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.platform.arn
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "access_logs" {
+  bucket                  = aws_s3_bucket.access_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
+  bucket     = aws_s3_bucket.access_logs.id
+  depends_on = [aws_s3_bucket_versioning.access_logs]
+  rule {
+    id     = "expire-access-logs"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 90
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "S3ServerAccessLogsPolicy"
+      Effect    = "Allow"
+      Principal = { Service = "logging.s3.amazonaws.com" }
+      Action    = "s3:PutObject"
+      Resource  = "${aws_s3_bucket.access_logs.arn}/*"
+      Condition = {
+        StringEquals = { "aws:SourceAccount" = var.account_id }
+      }
+    }]
   })
 }
 
@@ -145,6 +239,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
       noncurrent_days = 90
     }
   }
+}
+
+resource "aws_s3_bucket_logging" "tfstate" {
+  bucket        = aws_s3_bucket.tfstate.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "tfstate/"
 }
 
 resource "aws_s3_bucket_policy" "tfstate_tls_only" {
@@ -241,6 +341,30 @@ resource "aws_s3_bucket_public_access_block" "cloudtrail" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_versioning" "cloudtrail" {
+  bucket = aws_s3_bucket.cloudtrail.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "cloudtrail" {
+  bucket = aws_s3_bucket.cloudtrail.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.platform.arn
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_logging" "cloudtrail" {
+  bucket        = aws_s3_bucket.cloudtrail.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "cloudtrail/"
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "cloudtrail" {
   bucket = aws_s3_bucket.cloudtrail.id
   rule {
@@ -287,6 +411,50 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
   })
 }
 
+resource "aws_cloudwatch_log_group" "cloudtrail" {
+  name              = "/aws/cloudtrail/${local.name}"
+  retention_in_days = var.cloudwatch_retention_days
+  kms_key_id        = aws_kms_key.platform.arn
+}
+
+data "aws_iam_policy_document" "cloudtrail_cw_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [var.account_id]
+    }
+  }
+}
+
+resource "aws_iam_role" "cloudtrail_cw" {
+  name               = "${local.name}-cloudtrail-cloudwatch"
+  description        = "Lets CloudTrail deliver events to CloudWatch Logs"
+  assume_role_policy = data.aws_iam_policy_document.cloudtrail_cw_trust.json
+}
+
+resource "aws_iam_role_policy" "cloudtrail_cw" {
+  name = "deliver-to-cloudwatch"
+  role = aws_iam_role.cloudtrail_cw.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
+    }]
+  })
+}
+
+# Logs go to S3 for durable retention AND to CloudWatch, where a metric filter
+# can alarm on events in near real time. S3 alone gives you forensics after the
+# fact; CloudWatch is what lets you notice while it is happening.
 resource "aws_cloudtrail" "main" {
   name                          = local.trail
   s3_bucket_name                = aws_s3_bucket.cloudtrail.id
@@ -295,7 +463,13 @@ resource "aws_cloudtrail" "main" {
   enable_log_file_validation    = true
   kms_key_id                    = aws_kms_key.platform.arn
 
-  depends_on = [aws_s3_bucket_policy.cloudtrail]
+  cloud_watch_logs_group_arn = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
+  cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail_cw.arn
+
+  depends_on = [
+    aws_s3_bucket_policy.cloudtrail,
+    aws_iam_role_policy.cloudtrail_cw,
+  ]
 }
 
 ###############################################################################

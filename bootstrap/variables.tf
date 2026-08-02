@@ -45,3 +45,9 @@ variable "cloudtrail_retention_days" {
   type        = number
   default     = 365
 }
+
+variable "cloudwatch_retention_days" {
+  description = "CloudTrail CloudWatch log group retention."
+  type        = number
+  default     = 90
+}
