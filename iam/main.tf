@@ -59,6 +59,24 @@ locals {
   ]
 
   oidc_arn = "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:oidc-provider/token.actions.githubusercontent.com"
+
+  # This organisation issues OIDC tokens in GitHub's IMMUTABLE ID format, so the
+  # sub claim is not `repo:<org>/<repo>:<context>` but:
+  #
+  #   repo:Ubuntu-25c-market-prep@311938159/infra-aws@1319733777:pull_request
+  #
+  # A trust policy written against the documented plain format matches nothing
+  # and fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity` - an
+  # authorization error that points you at the trust policy's *contents* rather
+  # than its shape. If you ever need to see the real claim, it is the userName
+  # field of the failed event in CloudTrail.
+  #
+  # The org id is pinned because that is the property worth pinning: an attacker
+  # who creates an organisation named Ubuntu-25c-market-prep after a rename
+  # cannot reuse the id. Repo ids are wildcarded so a repo created later works
+  # without a lookup - repository names cannot contain "@", so `infra-aws@*`
+  # cannot match anything but this repo's id.
+  org_subject_prefix = "repo:${var.github_org}@${var.github_org_id}"
 }
 
 ###############################################################################
@@ -66,9 +84,10 @@ locals {
 ###############################################################################
 
 # Read at plan time rather than pinned. A hardcoded thumbprint becomes an outage
-# the day GitHub rotates its CA, and the placeholder value that AWS is documented
-# to ignore produced `Not authorized to perform sts:AssumeRoleWithWebIdentity` on
-# every run - an authorization error that says nothing about certificates.
+# the day GitHub rotates its CA; the placeholder it replaced relied on AWS
+# ignoring the value entirely, which is true but undocumented enough to be worth
+# not depending on. This was not the cause of any failure - see the sub claim
+# note above for that.
 data "tls_certificate" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
@@ -107,7 +126,7 @@ data "aws_iam_policy_document" "plan_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [for r in local.plan_repos : "repo:${var.github_org}/${r}:*"]
+      values   = [for r in local.plan_repos : "${local.org_subject_prefix}/${r}@*:*"]
     }
   }
 }
@@ -170,8 +189,8 @@ data "aws_iam_policy_document" "apply_trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_org}/infra-aws:ref:refs/heads/main",
-        "repo:${var.github_org}/infra-aws:environment:aws-apply",
+        "${local.org_subject_prefix}/infra-aws@${var.infra_aws_repo_id}:ref:refs/heads/main",
+        "${local.org_subject_prefix}/infra-aws@${var.infra_aws_repo_id}:environment:aws-apply",
       ]
     }
   }
