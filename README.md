@@ -215,6 +215,27 @@ applies until someone adds an OIDC provider to the management account. That is a
 deliberate gap: Organizations, SCPs and Identity Center are exactly where an
 automatic apply from a merged pull request has the largest blast radius.
 
+### Adding a layer to CI
+
+The matrix is resolved at run time from `WORKLOAD_MODULES` in the workflow,
+intersected with the directories that actually exist. A layer that is declared
+but not yet written is **skipped, not failed** — the epics land over months, and
+a red check for a directory nobody has created trains people to ignore red
+checks. `network` is already declared and will start planning itself the moment
+`network/` appears.
+
+To add the one after it:
+
+1. Append it to `WORKLOAD_MODULES` (dependency order — `apply` runs serially in
+   this order).
+2. Add `"<layer>/**"` to both `paths:` filters, or its pull requests never
+   trigger the workflow and the checks look green because they never ran.
+3. `gh secret set TFVARS_<LAYER> < <layer>/terraform.tfvars`. Forget this and the
+   plan fails with an explicit message naming the secret and the command.
+
+State keys are derived as `shared/<layer>/terraform.tfstate`, matching the
+convention. A layer needing a different scope needs the resolver changed.
+
 ## Conventions
 
 Naming, tagging and state-key conventions are in
