@@ -26,6 +26,9 @@ per_account_ceilings_usd = {
 
 anomaly_threshold_usd = 25
 
+# AWS creates this automatically; only one DIMENSIONAL monitor is allowed per account.
+anomaly_monitor_arn = "arn:aws:ce::909783398044:anomalymonitor/REPLACE-WITH-DEFAULT-MONITOR"
+
 alert_emails = [
   "tishbekaslan@gmail.com",
 ]

@@ -47,6 +47,8 @@ data "aws_partition" "current" {}
 
 locals {
   name = "${var.org_prefix}-org"
+
+  anomaly_monitor_arn = var.anomaly_monitor_arn != "" ? var.anomaly_monitor_arn : aws_ce_anomaly_monitor.services[0].arn
 }
 
 ###############################################################################
@@ -246,23 +248,59 @@ resource "aws_budgets_budget" "per_account" {
 # Anomaly detection - catches a spike inside a period the budget would miss
 ###############################################################################
 
+# AWS provisions a Default-Services-Monitor automatically, and the limit is one
+# DIMENSIONAL monitor per account. Reuse the existing one when its ARN is given
+# rather than failing on a limit that cannot be raised.
 resource "aws_ce_anomaly_monitor" "services" {
+  count             = var.anomaly_monitor_arn == "" ? 1 : 0
   name              = "${local.name}-service-monitor"
   monitor_type      = "DIMENSIONAL"
   monitor_dimension = "SERVICE"
 }
 
+# IMMEDIATE frequency only accepts SNS subscriptions - email is limited to DAILY
+# or WEEKLY. Immediate is what you want for a runaway: AWS already ships a
+# Default-Services-Subscription on DAILY email, so a second daily email would add
+# nothing. This routes through SNS to get alerts within minutes instead of a day.
+resource "aws_sns_topic" "cost_alerts" {
+  name              = "${local.name}-cost-alerts"
+  kms_master_key_id = "alias/aws/sns"
+}
+
+data "aws_iam_policy_document" "cost_alerts" {
+  statement {
+    effect  = "Allow"
+    actions = ["SNS:Publish"]
+    principals {
+      type        = "Service"
+      identifiers = ["costalerts.amazonaws.com"]
+    }
+    resources = [aws_sns_topic.cost_alerts.arn]
+  }
+}
+
+resource "aws_sns_topic_policy" "cost_alerts" {
+  arn    = aws_sns_topic.cost_alerts.arn
+  policy = data.aws_iam_policy_document.cost_alerts.json
+}
+
+# Each recipient must confirm the subscription from the email AWS sends.
+# Until confirmed, the alert goes nowhere.
+resource "aws_sns_topic_subscription" "cost_alerts" {
+  for_each  = toset(var.alert_emails)
+  topic_arn = aws_sns_topic.cost_alerts.arn
+  protocol  = "email"
+  endpoint  = each.value
+}
+
 resource "aws_ce_anomaly_subscription" "immediate" {
   name             = "${local.name}-anomaly"
   frequency        = "IMMEDIATE"
-  monitor_arn_list = [aws_ce_anomaly_monitor.services.arn]
+  monitor_arn_list = [local.anomaly_monitor_arn]
 
-  dynamic "subscriber" {
-    for_each = var.alert_emails
-    content {
-      type    = "EMAIL"
-      address = subscriber.value
-    }
+  subscriber {
+    type    = "SNS"
+    address = aws_sns_topic.cost_alerts.arn
   }
 
   threshold_expression {
@@ -272,4 +310,6 @@ resource "aws_ce_anomaly_subscription" "immediate" {
       values        = [tostring(var.anomaly_threshold_usd)]
     }
   }
+
+  depends_on = [aws_sns_topic_policy.cost_alerts]
 }

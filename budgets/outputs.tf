@@ -15,3 +15,8 @@ output "detach_freeze_command" {
     "--target-id <account-id>",
   ])
 }
+
+output "cost_alert_topic_arn" {
+  description = "SNS topic for immediate anomaly alerts. Email subscribers must confirm."
+  value       = aws_sns_topic.cost_alerts.arn
+}

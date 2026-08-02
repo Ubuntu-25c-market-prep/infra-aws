@@ -17,6 +17,17 @@ terraform {
       version = "~> 5.70"
     }
   }
+
+  # Added after the first local apply, then migrated with:
+  #   terraform init -migrate-state
+  backend "s3" {
+    bucket       = "u25c-tfstate-808540602855"
+    key          = "shared/bootstrap/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    kms_key_id   = "arn:aws:kms:us-east-1:808540602855:key/cee2883d-7322-41b3-bd0c-f71e1effe89f"
+    use_lockfile = true
+  }
 }
 
 provider "aws" {
@@ -322,35 +333,6 @@ resource "aws_budgets_budget" "monthly" {
     threshold_type             = "PERCENTAGE"
     notification_type          = "FORECASTED"
     subscriber_email_addresses = var.alert_emails
-  }
-}
-
-resource "aws_ce_anomaly_monitor" "services" {
-  name              = "${local.name}-service-monitor"
-  monitor_type      = "DIMENSIONAL"
-  monitor_dimension = "SERVICE"
-}
-
-resource "aws_ce_anomaly_subscription" "daily" {
-  name      = "${local.name}-anomaly-daily"
-  frequency = "DAILY"
-
-  monitor_arn_list = [aws_ce_anomaly_monitor.services.arn]
-
-  dynamic "subscriber" {
-    for_each = var.alert_emails
-    content {
-      type    = "EMAIL"
-      address = subscriber.value
-    }
-  }
-
-  threshold_expression {
-    dimension {
-      key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
-      match_options = ["GREATER_THAN_OR_EQUAL"]
-      values        = [tostring(var.anomaly_threshold_usd)]
-    }
   }
 }
 

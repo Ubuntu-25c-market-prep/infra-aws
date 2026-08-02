@@ -85,3 +85,14 @@ variable "alert_emails" {
     error_message = "At least one recipient is required."
   }
 }
+
+variable "anomaly_monitor_arn" {
+  description = <<-EOT
+    ARN of an existing DIMENSIONAL cost anomaly monitor to subscribe to. AWS
+    creates a Default-Services-Monitor automatically and permits only one per
+    account, so supply that ARN rather than trying to create a second. Leave
+    empty to create one.
+  EOT
+  type        = string
+  default     = ""
+}
