@@ -25,6 +25,7 @@ on:
       - "bootstrap/**"
       - "iam/**"
       - "network/**"
+      - "modules/**"
       - ".github/workflows/terraform.yml"
   push:
     branches: [main]
@@ -32,6 +33,7 @@ on:
       - "bootstrap/**"
       - "iam/**"
       - "network/**"
+      - "modules/**"
       - ".github/workflows/terraform.yml"
 
 # id-token is what makes OIDC work. Without it there is no token to exchange and
@@ -61,6 +63,13 @@ jobs:
   # Management-account layers - budgets, organization, identity - are absent on
   # purpose. Both OIDC roles live in the workload account, so CI cannot reach
   # them at all. See the header.
+  #
+  # modules/ is NOT a layer and must never be added to WORKLOAD_MODULES. It holds
+  # no state and is never applied - it is called by the layers above. It appears
+  # in the `paths:` filters anyway, and deliberately: since ADR 0010 the layers
+  # source it by relative path, so editing a module changes its callers' plans.
+  # Without it in `paths:` a module change would merge with no plan at all, which
+  # is precisely the failure that per-module version tags used to prevent.
   modules:
     runs-on: ubuntu-latest
     outputs:

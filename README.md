@@ -92,6 +92,11 @@ Onboarding a person, including how one-time passwords are handed out, is
 | `eks/` | workload | `@infra` | Cluster, node groups, Pod Identity — *not written yet, Wave 2 epic* | — |
 | `ecr/` | workload | `@infra` | Registries and lifecycle policies — *not written yet* | — |
 | `bedrock/` | workload | `@bedrock` | Model access, guardrails, VPC endpoints — *not written yet, Wave 7 epic* | — |
+| `modules/` | — | `@infra` | Reusable modules called by the layers above — never applied directly | — |
+
+Every directory except `modules/` is a Terraform **layer** with its own state
+file. `modules/` holds no state and is never applied; see
+[`modules/README.md`](modules/README.md).
 
 Three configurations run in the management account, and they have to:
 Organizations, SCPs, budget actions and Identity Center exist nowhere else.
