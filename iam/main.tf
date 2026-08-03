@@ -48,12 +48,18 @@ locals {
   name = "${var.org_prefix}-shared"
 
   # Every repository that may render a plan.
+  #
+  # Four entries were removed by ADR 0010, which archived the repositories they
+  # named. A subject claim for a repository that no longer exists is dead weight
+  # rather than a live grant, but leaving it invites someone to recreate the name
+  # and inherit the trust.
+  #
+  # Only infra-aws contains Terraform today. gitops-flux and gitops-argocd are
+  # kept because they predate this change and removing them is a posture decision
+  # rather than a consequence of the merge - worth doing, in its own pull request,
+  # with @security looking at it.
   plan_repos = [
     "infra-aws",
-    "infra-modules",
-    "platform-addons",
-    "platform-observability",
-    "platform-security",
     "gitops-flux",
     "gitops-argocd",
   ]
