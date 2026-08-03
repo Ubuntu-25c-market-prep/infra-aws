@@ -1,24 +1,28 @@
 # Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
 #
+# This repository is public, so the example carries placeholders rather than the
+# live account ids. Get them from `aws organizations list-accounts`.
+#
 # Runs in the WORKLOAD account. Assume into it from management first:
 #   aws sts assume-role \
-#     --role-arn arn:aws:iam::808540602855:role/OrganizationAccountAccessRole \
+#     --role-arn arn:aws:iam::REPLACE-WORKLOAD-ACCOUNT-ID:role/OrganizationAccountAccessRole \
 #     --role-session-name bootstrap
 
-account_id = "808540602855" # Dev - the single workload account
+account_id = "REPLACE-WORKLOAD-ACCOUNT-ID" # Dev - the single workload account
 region     = "us-east-1"
 org_prefix = "u25c"
 
 # The management account runs budgets/ but stores its state in this bucket.
-state_reader_account_ids = ["909783398044"]
+state_reader_account_ids = ["REPLACE-MANAGEMENT-ACCOUNT-ID"]
 
 # Account-level budget. The org-wide ceiling with the enforcing freeze action
 # lives in budgets/, which runs in the management account.
 monthly_budget_usd    = "200"
 anomaly_threshold_usd = 25
 
+# Use a role address the whole team can reach, not a personal mailbox.
 alert_emails = [
-  "tishbekaslan@gmail.com",
+  "you+u25c-alerts@example.com",
 ]
 
 # Set to your organisation id to make the trail an ORGANISATION trail. Requires

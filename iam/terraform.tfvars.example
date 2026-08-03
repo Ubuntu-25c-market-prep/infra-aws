@@ -1,12 +1,15 @@
 # Copy to terraform.tfvars after running ../bootstrap. Never commit terraform.tfvars.
-account_id   = "808540602855"
+#
+# This repository is public, so the example carries placeholders rather than the
+# live account id and bucket name.
+account_id   = "REPLACE-WORKLOAD-ACCOUNT-ID"
 region       = "us-east-1"
 org_prefix   = "u25c"
 github_org   = "Ubuntu-25c-market-prep"
 
 # Both come from `terraform output` in ../bootstrap.
-state_bucket = "u25c-tfstate-808540602855"
-kms_key_arn  = "arn:aws:kms:us-east-1:808540602855:key/REPLACE-ME"
+state_bucket = "u25c-tfstate-REPLACE-WORKLOAD-ACCOUNT-ID"
+kms_key_arn  = "arn:aws:kms:us-east-1:REPLACE-WORKLOAD-ACCOUNT-ID:key/REPLACE-ME"
 
 # gh api /orgs/<org> --jq .id   /   gh api /repos/<org>/infra-aws --jq .id
 github_org_id     = "REPLACE-ME"

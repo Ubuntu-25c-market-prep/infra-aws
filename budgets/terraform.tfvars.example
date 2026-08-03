@@ -1,17 +1,20 @@
 # Copy to terraform.tfvars. Never commit terraform.tfvars.
 #
+# This repository is public, so the example carries placeholders rather than the
+# live account ids. Get them from `aws organizations list-accounts`.
+#
 # Runs in the MANAGEMENT account - Organizations, SCPs and budget actions exist
 # nowhere else. State is kept in the workload account's bucket so there is one
 # backend; bootstrap grants this account access via state_reader_account_ids.
 
-management_account_id = "909783398044"
+management_account_id = "REPLACE-MANAGEMENT-ACCOUNT-ID"
 region                = "us-east-1"
 org_prefix            = "u25c"
 
 # One workload account. The management account is deliberately absent - an SCP
 # attached to it would do nothing.
 workload_account_ids = [
-  "808540602855", # Dev - the single workload account
+  "REPLACE-WORKLOAD-ACCOUNT-ID", # Dev - the single workload account
 ]
 
 # Nothing is deployed yet, so start low and raise it deliberately as waves land.
@@ -21,14 +24,15 @@ freeze_threshold_percent = 100
 freeze_approval_model    = "AUTOMATIC"
 
 per_account_ceilings_usd = {
-  "808540602855" = "200"
+  "REPLACE-WORKLOAD-ACCOUNT-ID" = "200"
 }
 
 anomaly_threshold_usd = 25
 
 # AWS creates this automatically; only one DIMENSIONAL monitor is allowed per account.
-anomaly_monitor_arn = "arn:aws:ce::909783398044:anomalymonitor/REPLACE-WITH-DEFAULT-MONITOR"
+anomaly_monitor_arn = "arn:aws:ce::REPLACE-MANAGEMENT-ACCOUNT-ID:anomalymonitor/REPLACE-WITH-DEFAULT-MONITOR"
 
+# Use a role address the whole team can reach, not a personal mailbox.
 alert_emails = [
-  "tishbekaslan@gmail.com",
+  "you+u25c-alerts@example.com",
 ]
