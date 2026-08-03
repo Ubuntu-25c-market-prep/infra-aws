@@ -4,4 +4,6 @@
 /ecr/        @Ubuntu-25c-market-prep/infra
 /iam/        @Ubuntu-25c-market-prep/security
 /bedrock/    @Ubuntu-25c-market-prep/bedrock
+# Called by every layer above, so review is centralised on @infra.
+/modules/    @Ubuntu-25c-market-prep/infra
 *            @Ubuntu-25c-market-prep/cto
