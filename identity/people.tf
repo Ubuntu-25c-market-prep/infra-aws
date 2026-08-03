@@ -38,10 +38,16 @@ locals {
     Vera-Terna            = { first = "Vera", cto = false, workstreams = ["rancher", "finops"] }
     zhemaitite-anastasiia = { first = "Nastya", cto = false, workstreams = ["finops", "istio", "zerotrust"] }
 
-    # In the GitHub org, not on the source roster. No workstream means no
-    # engineer access - read-only until someone assigns one. This is the model
-    # working, not an oversight to paper over.
+    # No workstream means no engineer access - read-only until someone assigns
+    # one. This is the model working, not an oversight to paper over.
+    #
+    # Bakmurat is in the GitHub org, not on the source roster. Altair is on
+    # neither: the key below is the intended sign-in name, not a verified handle.
+    # Reconcile it with a real GitHub account before the person signs in -
+    # user_name is immutable, so correcting it afterwards destroys the user along
+    # with their password and registered MFA device.
     Bakmurat = { first = "Bakmurat", cto = false, workstreams = [] }
+    Altair   = { first = "Altair", cto = false, workstreams = [] }
   }
 
   ###############################################################################
