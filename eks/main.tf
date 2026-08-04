@@ -34,7 +34,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Org        = "u25c"
+      Org        = var.org_prefix
       Env        = "shared"
       Workstream = "infra"
       ManagedBy  = "terraform"
@@ -43,23 +43,27 @@ provider "aws" {
   }
 }
 
+locals {
+  name = "${var.org_prefix}-shared"
+}
+
 ###############################################################################
 # Read the VPC values the network layer published to SSM. This is the seam
 # between the two state files - no remote_state, no shared state access.
 ###############################################################################
 
 data "aws_ssm_parameter" "vpc_id" {
-  name = "/u25c/shared/network/vpc_id"
+  name = "/${var.org_prefix}/shared/network/vpc_id"
 }
 
 data "aws_ssm_parameter" "public_subnet_ids" {
-  name = "/u25c/shared/network/public_subnet_ids"
+  name = "/${var.org_prefix}/shared/network/public_subnet_ids"
 }
 
 module "eks" {
   source = "../modules/eks"
 
-  cluster_name = "u25c-shared"
+  cluster_name = local.name
   vpc_id       = data.aws_ssm_parameter.vpc_id.value
   subnet_ids   = split(",", data.aws_ssm_parameter.public_subnet_ids.value)
 
@@ -72,7 +76,7 @@ module "eks" {
   # A PlatformEngineer may only create IAM roles that carry the engineer
   # boundary (identity/main.tf). Without this the apply fails with
   # AccessDenied on iam:CreateRole.
-  permissions_boundary = "arn:aws:iam::${var.account_id}:policy/u25c-engineer-boundary"
+  permissions_boundary = "arn:aws:iam::${var.account_id}:policy/${var.org_prefix}-engineer-boundary"
 
   # authentication_mode is API, so cluster access comes only from these entries.
   admin_principal_arns = var.admin_principal_arns

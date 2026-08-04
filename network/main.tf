@@ -29,7 +29,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Org        = "u25c"
+      Org        = var.org_prefix
       Env        = "shared"
       Workstream = "infra"
       ManagedBy  = "terraform"
@@ -38,10 +38,14 @@ provider "aws" {
   }
 }
 
+locals {
+  name = "${var.org_prefix}-shared"
+}
+
 module "vpc" {
   source = "../modules/vpc"
 
-  name       = "u25c-shared"
+  name       = local.name
   cidr_block = var.vpc_cidr
 
   # Two public subnets (ADR 0006). The module takes the zones from this
@@ -63,13 +67,13 @@ module "vpc" {
 ###############################################################################
 
 resource "aws_ssm_parameter" "vpc_id" {
-  name  = "/u25c/shared/network/vpc_id"
+  name  = "/${var.org_prefix}/shared/network/vpc_id"
   type  = "String"
   value = module.vpc.vpc_id
 }
 
 resource "aws_ssm_parameter" "public_subnet_ids" {
-  name  = "/u25c/shared/network/public_subnet_ids"
+  name  = "/${var.org_prefix}/shared/network/public_subnet_ids"
   type  = "StringList"
   value = join(",", module.vpc.public_subnet_ids)
 }

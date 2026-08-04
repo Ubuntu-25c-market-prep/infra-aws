@@ -9,6 +9,12 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "org_prefix" {
+  description = "Short organisation code used in every resource name, in the SSM parameter paths downstream layers read, and in the Org tag. The tag policy in organization/ pins the Org tag to this value, so a literal here would drift the moment the prefix changes."
+  type        = string
+  default     = "u25c"
+}
+
 variable "vpc_cidr" {
   description = "IPv4 CIDR for the platform VPC (e.g. 10.0.0.0/16)."
   type        = string
