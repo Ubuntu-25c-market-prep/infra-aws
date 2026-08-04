@@ -1,0 +1,33 @@
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
+#
+# This repository is public, so the example carries placeholders rather than the
+# live account id and SSO role ARN.
+#
+# Apply ../network first. This layer reads the VPC id and subnet ids from the
+# SSM parameters that layer publishes.
+
+account_id = "REPLACE-WORKLOAD-ACCOUNT-ID" # guards against applying elsewhere
+region     = "us-east-1"
+org_prefix = "u25c"
+
+# Keep this on a release still in EKS standard support. Extended support costs
+# about six times as much per hour for the same control plane, and a version
+# falls into it automatically.
+kubernetes_version = "1.34"
+
+# Two t3.medium nodes is the smallest that reliably runs the system pods.
+node_instance_types = ["t3.medium"]
+node_desired_size   = 2
+node_min_size       = 1
+node_max_size       = 3
+
+# WHO CAN REACH THE CLUSTER. authentication_mode is API, so access entries are
+# the only way in - there is no aws-auth ConfigMap fallback. Leave this empty
+# and you get a cluster nobody can run kubectl against.
+#
+# The full SSO role ARN, including the hash suffix AWS appends:
+#   aws iam list-roles --query \
+#     'Roles[?starts_with(RoleName, `AWSReservedSSO_u25c-PlatformEngineer`)].Arn'
+admin_principal_arns = [
+  "arn:aws:iam::REPLACE-WORKLOAD-ACCOUNT-ID:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_u25c-PlatformEngineer_REPLACE-ME",
+]

@@ -88,8 +88,8 @@ Onboarding a person, including how one-time passwords are handed out, is
 | `organization/` | **management** | `@security` | OUs, account placement, guardrail SCPs, tag policy | applied |
 | `identity/` | **management** | `@security` | Identity Center groups, users, permission sets, assignments | applied |
 | `iam/` | workload | `@security` | GitHub OIDC provider, plan / apply roles, engineer boundary | applied |
-| `network/` | workload | `@infra` | VPC, subnets, NAT, endpoints, Route 53 — *not written yet, Wave 1 epic* | — |
-| `eks/` | workload | `@infra` | Cluster, node groups, Pod Identity — *not written yet, Wave 2 epic* | — |
+| `network/` | workload | `@infra` | VPC, two public subnets across 2 AZs, internet gateway, S3 gateway endpoint. No NAT and no private subnets — ADR 0005 / 0006 | applied |
+| `eks/` | workload | `@infra` | Cluster, managed node group, IRSA OIDC provider, access entries. No add-ons yet | applied |
 | `ecr/` | workload | `@infra` | Registries and lifecycle policies — *not written yet* | — |
 | `bedrock/` | workload | `@bedrock` | Model access, guardrails, VPC endpoints — *not written yet, Wave 7 epic* | — |
 | `modules/` | — | `@infra` | Reusable modules called by the layers above — never applied directly | — |

@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
+#
+# This repository is public, so the example carries placeholders rather than the
+# live account id. Get it from `aws organizations list-accounts`.
+#
+# Runs in the WORKLOAD account as a PlatformEngineer. Sign in through the
+# Identity Center access portal first.
+
+account_id = "REPLACE-WORKLOAD-ACCOUNT-ID" # guards against applying elsewhere
+region     = "us-east-1"
+org_prefix = "u25c"
+
+# The module carves one /24 public subnet per availability zone out of this.
+vpc_cidr = "10.0.0.0/16"
+
+# Two is the EKS minimum and what ADR 0006 specifies. The zones themselves come
+# from the region, not from this file.
+az_count = 2
