@@ -90,7 +90,7 @@ Onboarding a person, including how one-time passwords are handed out, is
 | `iam/` | workload | `@security` | GitHub OIDC provider, plan / apply roles, engineer boundary | applied |
 | `network/` | workload | `@infra` | VPC, two public subnets across 2 AZs, internet gateway, S3 gateway endpoint. No NAT and no private subnets — ADR 0005 / 0006 | applied |
 | `eks/` | workload | `@infra` | Cluster, managed node group, IRSA OIDC provider, access entries. No add-ons yet | applied |
-| `ecr/` | workload | `@infra` | Registries and lifecycle policies — *not written yet* | — |
+| `ecr/` | workload | `@infra` | Registries, immutable tags, lifecycle expiry. Shared across environments — one image, promoted | written |
 | `bedrock/` | workload | `@bedrock` | Model access, guardrails, VPC endpoints — *not written yet, Wave 7 epic* | — |
 | `modules/` | — | `@infra` | Reusable modules called by the layers above — never applied directly | — |
 

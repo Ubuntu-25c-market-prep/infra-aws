@@ -26,6 +26,7 @@ on:
       - "iam/**"
       - "network/**"
       - "eks/**"
+      - "ecr/**"
       - "modules/**"
       - ".github/workflows/terraform.yml"
   push:
@@ -35,6 +36,7 @@ on:
       - "iam/**"
       - "network/**"
       - "eks/**"
+      - "ecr/**"
       - "modules/**"
       - ".github/workflows/terraform.yml"
 
@@ -78,7 +80,7 @@ jobs:
       matrix: ${{ steps.resolve.outputs.matrix }}
       any: ${{ steps.resolve.outputs.any }}
     env:
-      WORKLOAD_MODULES: "bootstrap iam network eks"
+      WORKLOAD_MODULES: "bootstrap iam network eks ecr"
     steps:
       - uses: actions/checkout@v4
 
@@ -130,8 +132,8 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # bootstrap/, network/ and eks/ carry committed backend blocks; iam/ is
-      # partial and takes its configuration here. Passing -backend-config to a
+      # bootstrap/, network/, eks/ and ecr/ carry committed backend blocks; iam/
+      # is partial and takes its configuration here. Passing -backend-config to a
       # module that already has a full block is harmless as long as the values
       # agree - and the state_key this matrix derives is the same
       # shared/<layer>/terraform.tfstate those blocks already name.
