@@ -4,9 +4,9 @@ variable "cluster_name" {
 }
 
 variable "kubernetes_version" {
-  description = "Kubernetes control-plane version."
+  description = "Kubernetes control-plane version. Keep this on a release still in EKS standard support: a version that falls into extended support keeps running, but the control plane costs roughly six times as much per hour and the switch happens automatically. `aws eks describe-cluster-versions` prints the end-of-support date."
   type        = string
-  default     = "1.31"
+  default     = "1.34"
 }
 
 variable "vpc_id" {
