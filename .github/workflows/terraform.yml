@@ -25,6 +25,7 @@ on:
       - "bootstrap/**"
       - "iam/**"
       - "network/**"
+      - "eks/**"
       - "modules/**"
       - ".github/workflows/terraform.yml"
   push:
@@ -33,6 +34,7 @@ on:
       - "bootstrap/**"
       - "iam/**"
       - "network/**"
+      - "eks/**"
       - "modules/**"
       - ".github/workflows/terraform.yml"
 
@@ -76,7 +78,7 @@ jobs:
       matrix: ${{ steps.resolve.outputs.matrix }}
       any: ${{ steps.resolve.outputs.any }}
     env:
-      WORKLOAD_MODULES: "bootstrap iam network"
+      WORKLOAD_MODULES: "bootstrap iam network eks"
     steps:
       - uses: actions/checkout@v4
 
@@ -128,9 +130,11 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # bootstrap/ carries a committed backend block; the rest are partial and
-      # take their configuration here. Passing -backend-config to a module that
-      # already has a full block is harmless as long as the values agree.
+      # bootstrap/, network/ and eks/ carry committed backend blocks; iam/ is
+      # partial and takes its configuration here. Passing -backend-config to a
+      # module that already has a full block is harmless as long as the values
+      # agree - and the state_key this matrix derives is the same
+      # shared/<layer>/terraform.tfstate those blocks already name.
       - name: Init
         run: |
           terraform init -input=false \
@@ -190,8 +194,10 @@ jobs:
     environment: aws-apply
     # Serial, in the declared dependency order: bootstrap owns the state bucket
     # and the KMS key, iam owns the boundary that identity depends on, network
-    # comes after both. Parallel applies here would race on nothing today and on
-    # everything the moment a layer starts reading another's remote state.
+    # comes after both, and eks last - it reads the VPC id and subnet ids that
+    # network publishes to SSM, so a parallel run could plan against parameters
+    # that do not exist yet. Parallel applies would also race the moment a layer
+    # starts reading another's remote state.
     strategy:
       fail-fast: true
       max-parallel: 1
