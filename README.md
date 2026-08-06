@@ -233,34 +233,59 @@ applies until someone adds an OIDC provider to the management account. That is a
 deliberate gap: Organizations, SCPs and Identity Center are exactly where an
 automatic apply from a merged pull request has the largest blast radius.
 
-### Selecting which layers run
+### Selecting which layers run — the `Path:` line
 
-Two ways in, checked in this order.
+**Put a `Path:` line in your commit message naming the layer you want planned.**
 
-**1. A `[tf:...]` token in the commit message or pull request title.** Explicit,
-and the only way to plan a layer whose files did not change — a provider bump, a
-drift check, a re-plan after someone touched the console:
+```
+feat(storage): add the artifacts bucket
 
-| Token | Effect |
+Path: storage
+```
+
+That is the whole convention. It goes on its own line in the commit message
+body, and it names the directory of the Terraform root module to plan or apply.
+
+| You write | CI plans |
 |---|---|
-| `[tf:storage]` | that layer |
-| `[tf:iam,storage]` | several |
-| `[tf:all]` | every layer in `WORKLOAD_MODULES` |
-| `[tf:none]` | suppress — a docs commit that happens to touch a `.tf` file |
+| `Path: storage` | `storage` |
+| `Path: iam, storage` | both — comma or space separated |
+| `Path: iam`<br>`Path: storage` | both — repeated lines accumulate |
+| `Path: all` | every layer in `WORKLOAD_MODULES` |
+| `Path: none` | nothing — a docs commit that happens to touch a `.tf` file |
+| `Path: modules/s3-bucket` | **every** layer, because every layer calls it |
 
-Case-insensitive. A name that is not a layer produces a warning naming the valid
-ones, rather than silently planning nothing.
+It is forgiving about shape. `Path:`, `path:` and `PATH:` all work, as do
+`./storage/`, `/storage` and `storage/`. Naming a file (`Path: storage/main.tf`)
+resolves to its layer.
 
-**2. No token — the changed paths.** This is the backstop, and it is the reason
-forgetting the token cannot merge an unplanned change. A change under `modules/`
-resolves to **every** layer, since ADR 0010 has the layers sourcing modules by
-relative path.
+**Why you would use it.** It is the only way to plan a layer whose files did not
+change: a provider bump, a drift check, a re-plan after someone changed something
+in the console. Without it those need an empty commit or a manual run.
 
-There is no `paths:` filter on the workflow itself. There cannot be: a filter
-would stop the workflow starting when only the commit message selects a layer,
-making the token silently inert. The cost is that the `modules` job runs on every
-pull request — one checkout and one shell script, after which `plan` and `apply`
-skip when nothing resolved.
+**If you forget it, nothing breaks.** With no `Path:` line, CI falls back to the
+directories your diff actually touched — the old behaviour. That backstop exists
+so a forgotten line cannot merge an unplanned change and leave the repository
+quietly out of step with the account. `Path:` narrows or widens what CI does; it
+is not a gate you can fail to open.
+
+**A typo warns rather than passing silently.** `Path: storag` plans nothing and
+posts a warning naming the valid layers. A plan that quietly covers nothing is
+the failure this whole mechanism exists to prevent, so it is loud.
+
+Three details worth knowing before they surprise you:
+
+- **On its own line, at the start.** A pull request titled `fix: Path: parsing`
+  does *not* select a layer called `parsing` — the line must begin with `Path:`,
+  so prose cannot hijack it. A PR title counts only if the whole title starts
+  with `Path:`; in practice, put it in the commit body.
+- **Squash merges keep it.** The PR body becomes the commit message on `main`, so
+  a `Path:` line written once survives the merge and drives the apply.
+- **There is no `paths:` filter on the workflow.** There cannot be — a filter
+  would stop the workflow starting when only the message names a layer, making
+  the line inert. So the `modules` resolver job runs on every pull request. It is
+  one checkout and one shell script; `plan` and `apply` skip when it resolves to
+  nothing.
 
 ### Adding a layer to CI
 
@@ -283,6 +308,17 @@ convention. A layer needing a different scope needs the resolver changed.
 
 Naming, tagging and state-key conventions are in
 [`ops-program/CONVENTIONS.md`](https://github.com/Ubuntu-25c-market-prep/ops-program/blob/main/CONVENTIONS.md).
+
+**Commit messages carry a `Path:` line** naming the layer to plan — see
+[Selecting which layers run](#selecting-which-layers-run--the-path-line). Leave
+it out and CI falls back to your diff, so nothing breaks; include it and you can
+plan a layer you did not touch.
+
+```
+fix(iam): tighten the apply role's deny list
+
+Path: iam
+```
 
 **This repository is public.** Never commit state files or kubeconfigs — the
 security workflow blocks them at pull-request time and GitHub push protection
