@@ -88,6 +88,7 @@ Onboarding a person, including how one-time passwords are handed out, is
 | `organization/` | **management** | `@security` | OUs, account placement, guardrail SCPs, tag policy | applied |
 | `identity/` | **management** | `@security` | Identity Center groups, users, permission sets, assignments | applied |
 | `iam/` | workload | `@security` | GitHub OIDC provider, plan / apply roles, engineer boundary | applied |
+| `storage/` | workload | `@infra` | Application data bucket | applied |
 | `network/` | workload | `@infra` | VPC, subnets, NAT, endpoints, Route 53 — *not written yet, Wave 1 epic* | — |
 | `eks/` | workload | `@infra` | Cluster, node groups, Pod Identity — *not written yet, Wave 2 epic* | — |
 | `ecr/` | workload | `@infra` | Registries and lifecycle policies — *not written yet* | — |
@@ -154,7 +155,7 @@ of `allowed_account_ids`, with `AWS account ID not allowed`:
 
 | Layer | Credentials |
 |---|---|
-| `bootstrap/`, `iam/` | workload — `AWS_PROFILE=u25c-dev` |
+| `bootstrap/`, `iam/`, `storage/` | workload — `AWS_PROFILE=u25c-dev` |
 | `budgets/`, `organization/`, `identity/` | management — the default profile |
 
 ## What bootstrap creates
@@ -314,6 +315,26 @@ The tag policy is **report-only** — no `enforced_for`. An enforcing tag policy
 rejects resource creation, which turns one missing tag into a failed apply
 halfway through a wave. Turn on enforcement once FinOps showback says the
 account is already compliant.
+
+## storage/ — object storage
+
+One bucket, `u25c-shared-app-data-<account>`, built from
+[`modules/s3-bucket`](modules/s3-bucket) — private, KMS-encrypted, versioned,
+TLS-only, access-logged into the bucket `bootstrap/` created.
+
+Two things to know before adding the next bucket:
+
+- **Bucket definitions go in `storage/main.tf`, never in `terraform.tfvars`.**
+  tfvars is gitignored and CI rebuilds it from `TFVARS_STORAGE`, so a bucket
+  declared there would be invisible to review and would need a secret rotation
+  to change.
+- **The account id suffix is load-bearing.** S3 names are globally unique across
+  every AWS customer, so an unsuffixed name can fail at apply time with
+  `BucketAlreadyExists` against a bucket nobody here can see.
+
+The module's security posture is not configurable and its `tests/` directory
+asserts that. Read [`modules/s3-bucket/README.md`](modules/s3-bucket/README.md)
+before adding an input to it.
 
 ## identity/ — who signs in
 

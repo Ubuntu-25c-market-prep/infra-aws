@@ -25,6 +25,7 @@ on:
       - "bootstrap/**"
       - "iam/**"
       - "network/**"
+      - "storage/**"
       - "modules/**"
       - ".github/workflows/terraform.yml"
   push:
@@ -33,6 +34,7 @@ on:
       - "bootstrap/**"
       - "iam/**"
       - "network/**"
+      - "storage/**"
       - "modules/**"
       - ".github/workflows/terraform.yml"
 
@@ -76,7 +78,7 @@ jobs:
       matrix: ${{ steps.resolve.outputs.matrix }}
       any: ${{ steps.resolve.outputs.any }}
     env:
-      WORKLOAD_MODULES: "bootstrap iam network"
+      WORKLOAD_MODULES: "bootstrap iam network storage"
     steps:
       - uses: actions/checkout@v4
 

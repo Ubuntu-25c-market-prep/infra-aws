@@ -2,6 +2,7 @@
 /network/    @Ubuntu-25c-market-prep/infra
 /eks/        @Ubuntu-25c-market-prep/infra
 /ecr/        @Ubuntu-25c-market-prep/infra
+/storage/    @Ubuntu-25c-market-prep/infra
 /iam/        @Ubuntu-25c-market-prep/security
 /bedrock/    @Ubuntu-25c-market-prep/bedrock
 # Called by every layer above, so review is centralised on @infra.

@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars after running ../bootstrap. Never commit terraform.tfvars.
+#
+# This repository is public, so the example carries placeholders rather than the
+# live account id and key ARN.
+account_id = "REPLACE-WORKLOAD-ACCOUNT-ID"
+region     = "us-east-1"
+org_prefix = "u25c"
+
+# From `terraform -chdir=../bootstrap output -raw kms_key_arn`.
+kms_key_arn = "arn:aws:kms:us-east-1:REPLACE-WORKLOAD-ACCOUNT-ID:key/REPLACE-ME"
