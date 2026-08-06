@@ -8,10 +8,12 @@
 # TLS-only policy are hardcoded, so no caller can turn them off and no reviewer
 # has to check whether one did.
 #
-# That matters here more than it would elsewhere: terraform.tfvars is gitignored
-# and CI reconstructs it from a secret, so a `block_public_access = false` in a
-# caller's variables would never appear in a pull request diff. The only way to
-# make this bucket public is to edit this file, which @infra reviews.
+# Not because a switch would hide - tfvars is committed and reviewed now - but
+# because the review would have to catch it. A variable that can make a bucket
+# public turns "is this bucket private?" into a question with a per-caller
+# answer, checked by whoever happens to read that pull request. Hardcoded, it
+# has one answer for every caller, and changing it means editing this file,
+# which CODEOWNERS routes to @infra.
 #
 # If you need a bucket that is genuinely public - a CloudFront origin, a static
 # site - do not add a switch here. Write a second module whose name says so.

@@ -16,10 +16,11 @@ Five things are hardcoded in `main.tf` and are not inputs:
 | `aws_s3_bucket_versioning` | `Enabled` |
 | `aws_s3_bucket_policy` | `DenyInsecureTransport` on bucket and objects |
 
-This is not caution for its own sake. `terraform.tfvars` is gitignored and CI
-reconstructs it from a secret, so `block_public_access = false` in a caller's
-variables would never appear in a pull request diff. Making it a variable would
-put the account's most consequential S3 setting somewhere nobody reviews.
+This is not caution for its own sake. A variable that can make a bucket public
+turns "is this bucket private?" into a question with a per-caller answer, checked
+by whoever happens to read that pull request. Hardcoded, it has one answer for
+every caller, and changing it means editing this file — which CODEOWNERS routes
+to `@infra`.
 
 **Need a genuinely public bucket** — a CloudFront origin, a static site? Do not
 add a switch here. Write a second module whose name says what it does.

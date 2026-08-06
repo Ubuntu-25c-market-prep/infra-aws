@@ -5,9 +5,9 @@
 # for_each over a map: an explicit block is a reviewable diff, and a renamed map
 # key silently destroys and recreates the bucket it used to name.
 #
-# Bucket definitions belong in THIS file, never in terraform.tfvars - tfvars is
-# gitignored and CI rebuilds it from a secret, so anything declared there is
-# invisible to review and needs a secret rotation to change.
+# Bucket definitions belong in THIS file, never in terraform.tfvars. A bucket
+# declared in tfvars is a data change rather than a reviewable resource block,
+# and it reads as configuration when it is actually infrastructure.
 #
 # Depends on ../bootstrap for the KMS key and the access-log bucket. Costs
 # essentially nothing until objects land in it.

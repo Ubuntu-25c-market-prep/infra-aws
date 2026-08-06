@@ -13,3 +13,12 @@ permissions:
 jobs:
   scan:
     uses: Ubuntu-25c-market-prep/.github/.github/workflows/security-scan.yml@main
+    # This repository commits its terraform.tfvars. The values in them - account
+    # ids and the platform KMS ARN - are already in the tree in plain text,
+    # because bootstrap/main.tf has to hardcode them: a backend block cannot take
+    # variables. Blocking the file protected nothing it was not already leaking.
+    #
+    # The flag covers tfvars ONLY. State files, kubeconfigs and key material are
+    # still blocked unconditionally by the reusable scan.
+    with:
+      allow_tfvars: true

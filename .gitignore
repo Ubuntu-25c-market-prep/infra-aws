@@ -1,7 +1,25 @@
+# terraform.tfvars IS committed in this repository, deliberately.
+#
+# The values in them - account ids, the platform KMS ARN - are already in the
+# tree in plain text: bootstrap/main.tf hardcodes them in its backend block,
+# because a backend block cannot take variables. Gitignoring the tfvars hid
+# nothing and cost a GitHub secret per layer to work around.
+#
+# The bar for anything added to a tfvars from here on is therefore: it must be
+# publishable. An email address, a hostname, a token or a licence key does not
+# go in one - use a TF_VAR_ environment variable or a secret for those.
+#
+# EXCEPT these four. They carry alert_emails - real addresses, which a public
+# repository turns into permanent harvestable text. They stay out of the tree
+# until the alerts move to a role alias on a domain that actually receives mail;
+# CI falls back to TFVARS_<LAYER> for them. Listed by name rather than by pattern
+# so that adding a layer does not silently re-ignore its tfvars.
+bootstrap/terraform.tfvars
+budgets/terraform.tfvars
+organization/terraform.tfvars
+identity/terraform.tfvars
+
 # Never commit - the security workflow also blocks these at PR time.
-*.tfvars
-*.tfvars.json
-!*.tfvars.example
 .terraform/
 # .terraform.lock.hcl is intentionally committed - it pins provider hashes
 terraform.tfstate
