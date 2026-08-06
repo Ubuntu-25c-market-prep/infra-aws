@@ -12,9 +12,9 @@
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
-  tags = merge(var.tags, {
+  tags = {
     Name = "${var.name}-public-rt"
-  })
+  }
 }
 
 resource "aws_route" "public_default" {

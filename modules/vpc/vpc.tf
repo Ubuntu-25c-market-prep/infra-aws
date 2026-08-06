@@ -13,7 +13,7 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = var.enable_dns_hostnames
   instance_tenancy     = var.instance_tenancy
 
-  tags = merge(var.tags, {
+  tags = {
     Name = "${var.name}-vpc"
-  })
+  }
 }

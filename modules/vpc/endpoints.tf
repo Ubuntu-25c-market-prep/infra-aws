@@ -18,7 +18,7 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.public.id]
 
-  tags = merge(var.tags, {
+  tags = {
     Name = "${var.name}-s3-endpoint"
-  })
+  }
 }

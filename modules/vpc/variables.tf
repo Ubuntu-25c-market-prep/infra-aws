@@ -51,27 +51,9 @@ variable "create_internet_gateway" {
 ###############################################################################
 
 variable "az_count" {
-  description = "How many availability zones to spread public subnets across. Ignored when availability_zones or public_subnet_cidrs is given explicitly."
+  description = "How many public subnets to create, one per availability zone. Zones are taken from the provider's region, so the module is not tied to one region."
   type        = number
   default     = 2
-}
-
-variable "availability_zones" {
-  description = "Availability zones to place subnets in. Empty (the default) takes the first az_count zones of the provider's region, so the module is not tied to one region."
-  type        = list(string)
-  default     = []
-}
-
-variable "public_subnet_cidrs" {
-  description = "IPv4 CIDR for each public subnet, in order. Empty (the default) carves them out of cidr_block. Its length decides how many subnets exist."
-  type        = list(string)
-  default     = []
-}
-
-variable "public_subnet_newbits" {
-  description = "Bits added to the VPC prefix when carving subnets automatically. 8 on a /16 gives /24s."
-  type        = number
-  default     = 8
 }
 
 variable "map_public_ip_on_launch" {
@@ -119,14 +101,4 @@ variable "enable_s3_gateway_endpoint" {
   description = "Create the free S3 gateway endpoint on the public route table."
   type        = bool
   default     = false
-}
-
-###############################################################################
-# Tagging
-###############################################################################
-
-variable "tags" {
-  description = "Extra tags merged into every resource this module creates. Name is always set by the module."
-  type        = map(string)
-  default     = {}
 }
