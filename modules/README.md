@@ -72,6 +72,12 @@ callable from any layer and extractable later without rewriting it.
    change that would force resource replacement shows up in the plan output
    before anyone approves it.
 
+A change anywhere under `modules/` resolves to **every** layer, whether you write
+a `Path:` line or not — every layer sources modules by relative path, so a module
+edit changes its callers' plans. `Path: modules/<name>` is accepted and means the
+same thing. See
+[Selecting which layers run](../README.md#selecting-which-layers-run--the-path-line).
+
 Read the plan. A change that replaces a resource is still a breaking change even
 though nothing in the interface moved — "applying this will not destroy your
 database" is part of the contract, and without tags the plan is what enforces it.

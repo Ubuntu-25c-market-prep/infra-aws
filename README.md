@@ -88,6 +88,7 @@ Onboarding a person, including how one-time passwords are handed out, is
 | `organization/` | **management** | `@security` | OUs, account placement, guardrail SCPs, tag policy | applied |
 | `identity/` | **management** | `@security` | Identity Center groups, users, permission sets, assignments | applied |
 | `iam/` | workload | `@security` | GitHub OIDC provider, plan / apply roles, engineer boundary | applied |
+| `storage/` | workload | `@infra` | Application data bucket | applied |
 | `network/` | workload | `@infra` | VPC, subnets, NAT, endpoints, Route 53 — *not written yet, Wave 1 epic* | — |
 | `eks/` | workload | `@infra` | Cluster, node groups, Pod Identity — *not written yet, Wave 2 epic* | — |
 | `ecr/` | workload | `@infra` | Registries and lifecycle policies — *not written yet* | — |
@@ -113,7 +114,7 @@ the bucket it just made.
 
 ```bash
 cd bootstrap
-cp terraform.tfvars.example terraform.tfvars   # gitignored; fill in alert_emails
+cp terraform.tfvars.example terraform.tfvars   # not committed - it carries alert_emails
 terraform init
 terraform plan          # read this properly - it creates the guardrails
 terraform apply
@@ -134,7 +135,7 @@ and the KMS key:
 
 ```bash
 cd ../iam
-cp terraform.tfvars.example terraform.tfvars   # fill in from bootstrap outputs
+# terraform.tfvars is committed for this layer - nothing to fill in.
 terraform init \
   -backend-config="bucket=u25c-tfstate-808540602855" \
   -backend-config="key=shared/iam/terraform.tfstate" \
@@ -154,7 +155,7 @@ of `allowed_account_ids`, with `AWS account ID not allowed`:
 
 | Layer | Credentials |
 |---|---|
-| `bootstrap/`, `iam/` | workload — `AWS_PROFILE=u25c-dev` |
+| `bootstrap/`, `iam/`, `storage/` | workload — `AWS_PROFILE=u25c-dev` |
 | `budgets/`, `organization/`, `identity/` | management — the default profile |
 
 ## What bootstrap creates
@@ -203,16 +204,28 @@ gh variable set AWS_PLAN_ROLE_ARN  --body "$(terraform -chdir=iam output -raw pl
 gh variable set AWS_APPLY_ROLE_ARN --body "$(terraform -chdir=iam output -raw apply_role_arn)"
 ```
 
-Because `terraform.tfvars` is gitignored and this repository is public, CI
-reconstructs it on the runner from two **secrets** — not variables. GitHub prints
-a step's `env` block into the workflow log, and the logs of a public repository
-are public, so a variable would publish the account ids and alert addresses on
-every run:
+`terraform.tfvars` is **committed** for layers whose inputs are publishable, so
+CI reads them straight from the tree with no secret involved.
+
+The reasoning: `bootstrap/main.tf` already hardcodes the account id, the state
+bucket and the KMS ARN in plain text, because a `backend` block cannot take
+variables. Those values were public whatever the tfvars policy said, and keeping
+the files out of the tree bought nothing while costing a GitHub secret per layer.
+
+**The bar for anything added to a tfvars is now: it must be publishable.** An
+email address, hostname, token or licence key does not go in one.
+
+Layers that still carry alert addresses — `bootstrap/`, `budgets/`,
+`organization/`, `identity/` — keep their tfvars out of the tree and fall back to
+a secret, until those alerts move to a role alias:
 
 ```bash
 gh secret set TFVARS_BOOTSTRAP < bootstrap/terraform.tfvars
-gh secret set TFVARS_IAM       < iam/terraform.tfvars
 ```
+
+The `Materialise variables` step prefers a committed `terraform.tfvars` and only
+reaches for `TFVARS_<LAYER>` when the file is absent, so a layer can move from
+one to the other with no workflow change.
 
 **CI covers the workload-account layers only.** Both OIDC roles live in
 `808540602855`, so `budgets/`, `organization/` and `identity/` stay CTO-local
@@ -220,23 +233,73 @@ applies until someone adds an OIDC provider to the management account. That is a
 deliberate gap: Organizations, SCPs and Identity Center are exactly where an
 automatic apply from a merged pull request has the largest blast radius.
 
+### Selecting which layers run — the `Path:` line
+
+**Put a `Path:` line in your commit message naming the layer you want planned.**
+
+```
+feat(storage): add the artifacts bucket
+
+Path: storage
+```
+
+That is the whole convention. It goes on its own line in the commit message
+body, and it names the directory of the Terraform root module to plan or apply.
+
+| You write | CI plans |
+|---|---|
+| `Path: storage` | `storage` |
+| `Path: iam, storage` | both — comma or space separated |
+| `Path: iam`<br>`Path: storage` | both — repeated lines accumulate |
+| `Path: all` | every layer in `WORKLOAD_MODULES` |
+| `Path: none` | nothing — a docs commit that happens to touch a `.tf` file |
+| `Path: modules/s3-bucket` | **every** layer, because every layer calls it |
+
+It is forgiving about shape. `Path:`, `path:` and `PATH:` all work, as do
+`./storage/`, `/storage` and `storage/`. Naming a file (`Path: storage/main.tf`)
+resolves to its layer.
+
+**Why you would use it.** It is the only way to plan a layer whose files did not
+change: a provider bump, a drift check, a re-plan after someone changed something
+in the console. Without it those need an empty commit or a manual run.
+
+**If you forget it, nothing breaks.** With no `Path:` line, CI falls back to the
+directories your diff actually touched — the old behaviour. That backstop exists
+so a forgotten line cannot merge an unplanned change and leave the repository
+quietly out of step with the account. `Path:` narrows or widens what CI does; it
+is not a gate you can fail to open.
+
+**A typo warns rather than passing silently.** `Path: storag` plans nothing and
+posts a warning naming the valid layers. A plan that quietly covers nothing is
+the failure this whole mechanism exists to prevent, so it is loud.
+
+Three details worth knowing before they surprise you:
+
+- **On its own line, at the start.** A pull request titled `fix: Path: parsing`
+  does *not* select a layer called `parsing` — the line must begin with `Path:`,
+  so prose cannot hijack it. A PR title counts only if the whole title starts
+  with `Path:`; in practice, put it in the commit body.
+- **Squash merges keep it.** The PR body becomes the commit message on `main`, so
+  a `Path:` line written once survives the merge and drives the apply.
+- **There is no `paths:` filter on the workflow.** There cannot be — a filter
+  would stop the workflow starting when only the message names a layer, making
+  the line inert. So the `modules` resolver job runs on every pull request. It is
+  one checkout and one shell script; `plan` and `apply` skip when it resolves to
+  nothing.
+
 ### Adding a layer to CI
 
-The matrix is resolved at run time from `WORKLOAD_MODULES` in the workflow,
-intersected with the directories that actually exist. A layer that is declared
-but not yet written is **skipped, not failed** — the epics land over months, and
-a red check for a directory nobody has created trains people to ignore red
-checks. `network` is already declared and will start planning itself the moment
-`network/` appears.
+A layer declared but not yet written is **skipped, not failed** — the epics land
+over months, and a red check for a directory nobody has created trains people to
+ignore red checks. `network` is already declared and will start planning itself
+the moment `network/` appears.
 
 To add the one after it:
 
 1. Append it to `WORKLOAD_MODULES` (dependency order — `apply` runs serially in
    this order).
-2. Add `"<layer>/**"` to both `paths:` filters, or its pull requests never
-   trigger the workflow and the checks look green because they never ran.
-3. `gh secret set TFVARS_<LAYER> < <layer>/terraform.tfvars`. Forget this and the
-   plan fails with an explicit message naming the secret and the command.
+2. Commit its `terraform.tfvars`, or set `TFVARS_<LAYER>` if its inputs are not
+   publishable. Neither, and the plan fails naming both options.
 
 State keys are derived as `shared/<layer>/terraform.tfstate`, matching the
 convention. A layer needing a different scope needs the resolver changed.
@@ -246,9 +309,27 @@ convention. A layer needing a different scope needs the resolver changed.
 Naming, tagging and state-key conventions are in
 [`ops-program/CONVENTIONS.md`](https://github.com/Ubuntu-25c-market-prep/ops-program/blob/main/CONVENTIONS.md).
 
-**This repository is public.** Never commit `terraform.tfvars`, state files, or
-kubeconfigs — the security workflow blocks them at pull-request time and GitHub
-push protection blocks credential patterns at push time.
+**Commit messages carry a `Path:` line** naming the layer to plan — see
+[Selecting which layers run](#selecting-which-layers-run--the-path-line). Leave
+it out and CI falls back to your diff, so nothing breaks; include it and you can
+plan a layer you did not touch.
+
+```
+fix(iam): tighten the apply role's deny list
+
+Path: iam
+```
+
+**This repository is public.** Never commit state files or kubeconfigs — the
+security workflow blocks them at pull-request time and GitHub push protection
+blocks credential patterns at push time.
+
+`terraform.tfvars` **is** committed, deliberately, and the security scan is
+called with `allow_tfvars: true` to permit it. That exemption covers tfvars only;
+state and key material stay blocked unconditionally. It is also a promise about
+content: **a tfvars in this repository must contain nothing that is not already
+public in it.** Anything else — an address, a hostname, a token — belongs in a
+`TF_VAR_` environment variable or a secret.
 
 ## budgets/ — cost ceiling with an enforcement action
 
@@ -314,6 +395,25 @@ The tag policy is **report-only** — no `enforced_for`. An enforcing tag policy
 rejects resource creation, which turns one missing tag into a failed apply
 halfway through a wave. Turn on enforcement once FinOps showback says the
 account is already compliant.
+
+## storage/ — object storage
+
+One bucket, `u25c-shared-app-data-<account>`, built from
+[`modules/s3-bucket`](modules/s3-bucket) — private, KMS-encrypted, versioned,
+TLS-only, access-logged into the bucket `bootstrap/` created.
+
+Two things to know before adding the next bucket:
+
+- **Bucket definitions go in `storage/main.tf`, never in `terraform.tfvars`.**
+  A bucket declared in tfvars would be a data change rather than a reviewable
+  resource block, and a renamed key destroys and recreates the bucket it named.
+- **The account id suffix is load-bearing.** S3 names are globally unique across
+  every AWS customer, so an unsuffixed name can fail at apply time with
+  `BucketAlreadyExists` against a bucket nobody here can see.
+
+The module's security posture is not configurable and its `tests/` directory
+asserts that. Read [`modules/s3-bucket/README.md`](modules/s3-bucket/README.md)
+before adding an input to it.
 
 ## identity/ — who signs in
 
