@@ -28,13 +28,32 @@ terraform {
   }
 }
 
+###############################################################################
+# Configuration comes from the shared ../config.yaml: the `common` section
+# merged with this layer's `eks` section. account_id and admin_principal_arns
+# are deliberately NOT in that file - it is committed and this repository is
+# public, and both embed the account id - so they stay variables fed by the
+# gitignored terraform.tfvars.
+#
+# variables.tf and terraform.tfvars still carry the old inputs. They are unused
+# while the locals below are in place, and are kept so this can be reverted by
+# reverting this file alone.
+###############################################################################
+
+locals {
+  config_file = yamldecode(file("${path.module}/../config.yaml"))
+  config      = merge(local.config_file.common, local.config_file.eks)
+
+  name = "${local.config.org_prefix}-shared"
+}
+
 provider "aws" {
-  region              = var.region
+  region              = local.config.region
   allowed_account_ids = [var.account_id]
 
   default_tags {
     tags = {
-      Org        = var.org_prefix
+      Org        = local.config.org_prefix
       Env        = "shared"
       Workstream = "infra"
       ManagedBy  = "terraform"
@@ -43,21 +62,17 @@ provider "aws" {
   }
 }
 
-locals {
-  name = "${var.org_prefix}-shared"
-}
-
 ###############################################################################
 # Read the VPC values the network layer published to SSM. This is the seam
 # between the two state files - no remote_state, no shared state access.
 ###############################################################################
 
 data "aws_ssm_parameter" "vpc_id" {
-  name = "/${var.org_prefix}/shared/network/vpc_id"
+  name = "/${local.config.org_prefix}/shared/network/vpc_id"
 }
 
 data "aws_ssm_parameter" "public_subnet_ids" {
-  name = "/${var.org_prefix}/shared/network/public_subnet_ids"
+  name = "/${local.config.org_prefix}/shared/network/public_subnet_ids"
 }
 
 module "eks" {
@@ -67,17 +82,22 @@ module "eks" {
   vpc_id       = data.aws_ssm_parameter.vpc_id.value
   subnet_ids   = split(",", data.aws_ssm_parameter.public_subnet_ids.value)
 
-  kubernetes_version = var.kubernetes_version
-  instance_types     = var.node_instance_types
-  desired_size       = var.node_desired_size
-  min_size           = var.node_min_size
-  max_size           = var.node_max_size
+  kubernetes_version = local.config.kubernetes_version
+  instance_types     = local.config.node_instance_types
+  desired_size       = local.config.node_desired_size
+  min_size           = local.config.node_min_size
+  max_size           = local.config.node_max_size
 
   # A PlatformEngineer may only create IAM roles that carry the engineer
   # boundary (identity/main.tf). Without this the apply fails with
   # AccessDenied on iam:CreateRole.
-  permissions_boundary = "arn:aws:iam::${var.account_id}:policy/${var.org_prefix}-engineer-boundary"
+  permissions_boundary = "arn:aws:iam::${var.account_id}:policy/${local.config.org_prefix}-engineer-boundary"
 
   # authentication_mode is API, so cluster access comes only from these entries.
+  #
+  # Passed in rather than looked up: data.aws_iam_roles calls iam:ListRoles, and
+  # the PlatformEngineer permission set carries an explicit deny on it, so the
+  # lookup fails at plan time for the people who actually apply this.
+  authentication_mode  = local.config.authentication_mode
   admin_principal_arns = var.admin_principal_arns
 }
