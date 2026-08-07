@@ -64,7 +64,7 @@ provider "aws" {
 
 ###############################################################################
 # Read the VPC values the network layer published to SSM. This is the seam
-# between the two state files - no remote_state, no shared state access.
+# between the two state files - no remote_state, no shared state access
 ###############################################################################
 
 data "aws_ssm_parameter" "vpc_id" {
