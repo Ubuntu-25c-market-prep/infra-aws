@@ -1,0 +1,20 @@
+# This layer no longer uses terraform.tfvars.
+#
+# Normal configuration - region, org_prefix, vpc_cidr, az_count and the rest of
+# the vpc module's inputs - lives in ../config.yaml, which is committed.
+#
+# The account id is not committed. Supply it from the gitignored ../.env:
+#
+#   source ../.env
+#   terraform plan
+#
+# ../.env should contain:
+#
+#   export TF_VAR_account_id=REPLACE-WORKLOAD-ACCOUNT-ID
+#
+# Get the id from `aws organizations list-accounts`. Runs in the WORKLOAD
+# account as a PlatformEngineer - sign in through the Identity Center access
+# portal first.
+#
+# This file is kept as a pointer only; a terraform.tfvars here would still be
+# auto-loaded and would override the config above.

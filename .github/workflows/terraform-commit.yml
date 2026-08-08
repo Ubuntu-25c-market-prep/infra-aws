@@ -1,0 +1,278 @@
+###############################################################################
+# Commit-driven Terraform: plan on every push, apply on main.
+#
+#
+# HOW TO MAKE THIS RUN - READ THIS BEFORE YOU COMMIT
+# ==================================================
+#
+# The layer is taken from your COMMIT MESSAGE, not from the files you changed.
+# Put `Path: /<layer>` in the message. That is the only part this workflow
+# reads; everything else is free-form.
+#
+#   git commit -m "[update][network] added a private subnet  Path: /network"
+#   git commit -m "[chore][eks] bump kubernetes to 1.35      Path: /eks"
+#   git commit -m "[fix][ecr] correct lifecycle policy       Path: /ecr"
+#   git commit -m "[chore][iam] rotate the oidc thumbprint   Path: /iam"
+#   git commit -m "[update][bootstrap] widen state policy    Path: /bootstrap"
+#
+# The path is the directory you would `cd` into to run terraform, relative to
+# THIS REPOSITORY. Five are valid, and nothing else is:
+#
+#   /bootstrap   /iam   /network   /eks   /ecr
+#
+#
+# WHAT DOES NOT WORK
+# ------------------
+#
+#   Path: /infra-aws/network     no - this repo IS infra-aws, drop the prefix
+#   Path: /network/subnets.tf    no - the directory, not a file inside it
+#   Path: /networking            no - not a layer; the directory is `network`
+#   path: /network               no - capital P
+#   [update][network] no path    no - the bracket tags are ignored entirely
+#
+#   Path:/network                yes - the space after the colon is optional
+#
+# A commit with no valid `Path:` is SKIPPED, not failed - no plan, no apply,
+# and no red check. That keeps unrelated commits quiet, but it also means a
+# forgotten `Path:` on a merge to main means your change is never applied and
+# nothing tells you. Check the Actions tab if you expected a run.
+#
+# The bracket tags are labels for humans. If they ever disagree with the path -
+# `[update][network] ... Path: /eks` - the PATH wins and eks is what runs.
+#
+#
+# WHAT RUNS WHERE
+# ---------------
+#
+#   push to any branch   ->  terraform plan
+#   push to main (merge) ->  terraform plan, then terraform apply
+#
+# Apply is additionally gated on the `aws-apply` environment, so it waits for a
+# reviewer if one is configured.
+#
+#
+# This runs alongside terraform.yml, which selects layers by changed path
+# instead. Two workflows can plan the same layer on the same push; they cannot
+# both apply, because S3 native locking serialises them - the second waits and
+# then sees an empty diff.
+###############################################################################
+
+name: Terraform (commit-driven)
+
+on:
+  push:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # Pinned toolchain - belongs in code, not in a variable.
+  TF_VERSION: "1.10.5"
+  AWS_REGION: us-east-1
+  # Repository variable, not a secret: the bucket name is already committed in
+  # every layer's backend block. Kept out of here so a second account or region
+  # does not need a workflow edit.
+  STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+jobs:
+  # Resolve the layer from the commit message.
+  #
+  # The message is untrusted input, so it is passed through the environment and
+  # quoted - never interpolated into the script body, where a crafted commit
+  # message would execute as shell with the OIDC role attached. The result is
+  # then matched against a fixed allowlist, so nothing reaches `cd` that is not
+  # one of the five known layers.
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      layer: ${{ steps.parse.outputs.layer }}
+      found: ${{ steps.parse.outputs.found }}
+    steps:
+      - id: parse
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+          ALL: ${{ toJSON(github.event.commits) }}
+        run: |
+          set -eu
+
+          # Search the newest commit message and every commit in the push. The
+          # second matters because a merge commit reads "Merge pull request #12
+          # from ..." and names no layer of its own.
+          #
+          # tr turns every character that cannot appear in a path into a space,
+          # and a trailing space is appended. That makes each path a whole token
+          # with a space after it, so "Path: /networking" no longer matches the
+          # `network` layer, and the JSON quote in the ALL payload
+          # ("...Path: /eks") does not stop a match either.
+          TEXT="$(printf '%s %s ' "${MSG:-}" "${ALL:-}" | tr -c 'a-zA-Z0-9:/_-' ' ')"
+
+          # Ask "does the message say Path: /<this layer>?" once per known layer,
+          # rather than pulling a name out of the text and checking it after.
+          # Only these five strings are ever tested, so a commit message cannot
+          # introduce a sixth. Both "Path: /eks" and "Path:/eks" are accepted.
+          layer=""
+          for l in bootstrap iam network eks ecr; do
+            case "$TEXT" in
+              *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
+            esac
+          done
+
+          if [ -n "$layer" ]; then
+            echo "resolved layer: $layer"
+            echo "layer=$layer" >> "$GITHUB_OUTPUT"
+            echo "found=true"   >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No 'Path: /<layer>' in the commit message - nothing to do."
+            echo "::notice::Expected e.g. '[update][network] added a vpc  Path: /network'"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  plan:
+    name: plan (${{ needs.resolve.outputs.layer }})
+    needs: resolve
+    if: needs.resolve.outputs.found == 'true'
+    runs-on: ubuntu-latest
+    # Keyed on the LAYER, not the branch, because that is what the S3 state lock
+    # is keyed on. Set at job level because the layer is a job output and
+    # workflow-level concurrency is evaluated before any job runs.
+    #
+    # Two pushes touching network queue behind each other even from different
+    # branches; a network push and an eks push run in parallel, since separate
+    # state files cannot collide.
+    #
+    # cancel-in-progress stays false: killing a run mid-apply leaves the state
+    # lock held and resources half-created.
+    concurrency:
+      group: tf-${{ needs.resolve.outputs.layer }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ${{ needs.resolve.outputs.layer }}
+    env:
+      # network/ and eks/ read everything else from the committed config.yaml.
+      # An undeclared TF_VAR_* is ignored, so passing both to every layer is
+      # harmless.
+      TF_VAR_account_id: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_VAR_admin_principal_arns: ${{ secrets.EKS_ADMIN_PRINCIPAL_ARNS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - run: terraform fmt -check -recursive -diff
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init
+        run: |
+          # An unset TF_STATE_BUCKET would otherwise surface as an obscure S3
+          # error several lines into terraform's output.
+          if [ -z "${STATE_BUCKET:-}" ]; then
+            echo "::error::Repository variable TF_STATE_BUCKET is not set."
+            echo "::error::Set it with: gh variable set TF_STATE_BUCKET --body u25c-tfstate-<account-id>"
+            exit 1
+          fi
+          terraform init -input=false \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=shared/${{ needs.resolve.outputs.layer }}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - run: terraform validate
+
+      # bootstrap/, iam/ and ecr/ still take their inputs from a tfvars secret.
+      # network/ and eks/ have moved to config.yaml + TF_VAR_*, so their secrets
+      # are optional and this step no-ops when unset.
+      - name: Materialise tfvars (layers not yet on config.yaml)
+        env:
+          TFVARS: ${{ secrets[format('TFVARS_{0}', needs.resolve.outputs.layer)] }}
+        run: |
+          if [ -n "${TFVARS:-}" ]; then
+            printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+            echo "wrote ci.auto.tfvars"
+          else
+            echo "no TFVARS secret for this layer - using config.yaml and TF_VAR_*"
+          fi
+
+      - name: Plan
+        run: terraform plan -input=false -no-color -lock-timeout=5m -out=tf.plan
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### plan - ${{ needs.resolve.outputs.layer }}"
+            echo '```'
+            terraform show -no-color tf.plan 2>/dev/null | tail -60 || echo "no plan - see the step log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: apply (${{ needs.resolve.outputs.layer }})
+    needs: [resolve, plan]
+    if: github.ref == 'refs/heads/main' && needs.resolve.outputs.found == 'true'
+    runs-on: ubuntu-latest
+    # Second gate. Configure aws-apply with required reviewers - the apply
+    # role's trust policy names the environment explicitly.
+    environment: aws-apply
+    # Same group as plan, so nothing else touches this layer's state while an
+    # apply is waiting for its reviewer or running.
+    concurrency:
+      group: tf-${{ needs.resolve.outputs.layer }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ${{ needs.resolve.outputs.layer }}
+    env:
+      TF_VAR_account_id: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_VAR_admin_principal_arns: ${{ secrets.EKS_ADMIN_PRINCIPAL_ARNS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init
+        run: |
+          # An unset TF_STATE_BUCKET would otherwise surface as an obscure S3
+          # error several lines into terraform's output.
+          if [ -z "${STATE_BUCKET:-}" ]; then
+            echo "::error::Repository variable TF_STATE_BUCKET is not set."
+            echo "::error::Set it with: gh variable set TF_STATE_BUCKET --body u25c-tfstate-<account-id>"
+            exit 1
+          fi
+          terraform init -input=false \
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=shared/${{ needs.resolve.outputs.layer }}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Materialise tfvars (layers not yet on config.yaml)
+        env:
+          TFVARS: ${{ secrets[format('TFVARS_{0}', needs.resolve.outputs.layer)] }}
+        run: |
+          if [ -n "${TFVARS:-}" ]; then
+            printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+          fi
+
+      # Planned and applied in one step on purpose: a plan file from the push
+      # would be stale by the time the environment reviewer approves, and
+      # applying a stale plan is how you delete something that came back.
+      - name: Apply
+        run: terraform apply -input=false -auto-approve -lock-timeout=5m

@@ -1,0 +1,27 @@
+###############################################################################
+# Configuration shared by EVERY workload-account layer.
+#
+# Layer-specific values live next to the layer that uses them, in
+# <layer>/config.yaml. Each layer merges this file's `common` section with its
+# own, and its own wins on a collision:
+#
+#   infra-aws/config.yaml          <- you are here: region, org_prefix
+#   infra-aws/network/config.yaml  <- vpc_cidr, az_count, ...
+#   infra-aws/eks/config.yaml      <- kubernetes_version, node sizing, ...
+#
+# Only put something here if changing it should change every layer at once.
+# Anything one layer owns belongs in that layer's file.
+#
+# SECRETS DO NOT GO IN EITHER FILE. Both are committed and this repository is
+# public. account_id and admin_principal_arns embed the account id, so they
+# stay terraform variables, supplied by the gitignored .env locally and by a
+# GitHub variable/secret in CI.
+#
+#   source ../.env && terraform plan
+#
+# Changing a value here affects all layers, so plan each one you care about.
+###############################################################################
+
+common:
+  region: us-east-1
+  org_prefix: u25c
