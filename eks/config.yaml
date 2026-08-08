@@ -1,0 +1,19 @@
+eks:
+  # Keep this on a release still in EKS standard support - a version that falls
+  # into extended support keeps running at roughly six times the control-plane
+  # cost, and the switch happens automatically.
+  # 1.34 standard support ends 2026-12-01. `aws eks describe-cluster-versions`.
+  kubernetes_version: "1.34"
+
+  node_instance_types:
+    - t3.medium
+  node_desired_size: 2
+  node_min_size: 1
+  node_max_size: 3
+
+  # API means cluster access comes only from the access entries the module
+  # creates, so an empty admin list locks everyone out.
+  #
+  # The admin ARNs themselves are not here: they are Identity Center role ARNs
+  # carrying the account id, and this file is committed. See .env.
+  authentication_mode: API
