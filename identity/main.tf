@@ -191,6 +191,22 @@ resource "aws_ssoadmin_managed_policy_attachment" "engineer_poweruser" {
   managed_policy_arn = "${local.managed_policy}/PowerUserAccess"
 }
 
+# PowerUserAccess grants iam:ListRoles and nothing else under iam:. Terraform reads
+# every resource back the moment it creates it, so a role that can CreateRole but not
+# GetRole fails every apply half-way through - leaving an orphaned role in the account
+# and nothing in state, which is worse than failing at the start. Reads carry no
+# escalation risk on their own, and the ProtectPrivilegedRoles deny below still decides
+# WHICH roles are readable.
+#
+# Managed rather than an explicit action list on purpose. The set of reads the AWS
+# provider issues grows with every resource type a new layer introduces, and each
+# omission is discovered the same way this one was: as a half-finished apply.
+resource "aws_ssoadmin_managed_policy_attachment" "engineer_iam_read" {
+  instance_arn       = local.instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.engineer.arn
+  managed_policy_arn = "${local.managed_policy}/IAMReadOnlyAccess"
+}
+
 data "aws_iam_policy_document" "engineer_iam" {
   # Creating a role, and attaching anything to it, only works if the new role
   # carries the same boundary this session runs under. Without this condition an
@@ -239,10 +255,16 @@ data "aws_iam_policy_document" "engineer_iam" {
       "iam:DeleteInstanceProfile",
       "iam:AddRoleToInstanceProfile",
       "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
       "iam:CreateOpenIDConnectProvider",
       "iam:DeleteOpenIDConnectProvider",
       "iam:UpdateOpenIDConnectProviderThumbprint",
       "iam:TagOpenIDConnectProvider",
+      # Every layer sets default_tags, so the first tag value that changes issues an
+      # untag call. Granting Tag without Untag is the same half-finished apply in a
+      # different costume.
+      "iam:UntagOpenIDConnectProvider",
       "iam:PassRole",
     ]
     resources = ["*"]
