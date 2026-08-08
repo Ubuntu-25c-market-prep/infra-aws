@@ -1,245 +1,245 @@
-###############################################################################
-# Terraform plan on every pull request, apply on main.
-#
-# WHAT THIS COVERS, AND WHAT IT DOES NOT
-#
-# Only the configurations that run in the WORKLOAD account. Both OIDC roles live
-# there, so CI has no credentials for the management account at all. That leaves
-# budgets/, organization/ and identity/ as CTO-local applies until somebody adds
-# an OIDC provider and a pair of roles to the management account.
-#
-# This is a real gap, not an oversight. Organizations, SCPs and Identity Center
-# are precisely the things where an automated apply from a merged pull request
-# has the largest blast radius, and they change roughly twice a term.
-#
-# The asymmetry between plan and apply is the security model - see iam/main.tf.
-# A pull request renders a plan with a read-only role. Only main, through the
-# aws-apply environment, can touch the account.
-###############################################################################
+# ###############################################################################
+# # Terraform plan on every pull request, apply on main.
+# #
+# # WHAT THIS COVERS, AND WHAT IT DOES NOT
+# #
+# # Only the configurations that run in the WORKLOAD account. Both OIDC roles live
+# # there, so CI has no credentials for the management account at all. That leaves
+# # budgets/, organization/ and identity/ as CTO-local applies until somebody adds
+# # an OIDC provider and a pair of roles to the management account.
+# #
+# # This is a real gap, not an oversight. Organizations, SCPs and Identity Center
+# # are precisely the things where an automated apply from a merged pull request
+# # has the largest blast radius, and they change roughly twice a term.
+# #
+# # The asymmetry between plan and apply is the security model - see iam/main.tf.
+# # A pull request renders a plan with a read-only role. Only main, through the
+# # aws-apply environment, can touch the account.
+# ###############################################################################
 
-name: Terraform
+# name: Terraform
 
-on:
-  pull_request:
-    paths:
-      - "bootstrap/**"
-      - "iam/**"
-      - "network/**"
-      - "modules/**"
-      - ".github/workflows/terraform.yml"
-  push:
-    branches: [main]
-    paths:
-      - "bootstrap/**"
-      - "iam/**"
-      - "network/**"
-      - "modules/**"
-      - ".github/workflows/terraform.yml"
+# on:
+#   pull_request:
+#     paths:
+#       - "bootstrap/**"
+#       - "iam/**"
+#       - "network/**"
+#       - "modules/**"
+#       - ".github/workflows/terraform.yml"
+#   push:
+#     branches: [main]
+#     paths:
+#       - "bootstrap/**"
+#       - "iam/**"
+#       - "network/**"
+#       - "modules/**"
+#       - ".github/workflows/terraform.yml"
 
-# id-token is what makes OIDC work. Without it there is no token to exchange and
-# the role assumption fails with a message that does not mention this line.
-permissions:
-  contents: read
-  id-token: write
-  pull-requests: write
+# # id-token is what makes OIDC work. Without it there is no token to exchange and
+# # the role assumption fails with a message that does not mention this line.
+# permissions:
+#   contents: read
+#   id-token: write
+#   pull-requests: write
 
-env:
-  TF_VERSION: "1.10.5"
-  AWS_REGION: us-east-1
-  STATE_BUCKET: u25c-tfstate-808540602855
+# env:
+#   TF_VERSION: "1.10.5"
+#   AWS_REGION: us-east-1
+#   STATE_BUCKET: u25c-tfstate-808540602855
 
-jobs:
-  # Which layers CI runs, resolved against what is actually in the tree.
-  #
-  # WORKLOAD_MODULES below is the declaration, in dependency order. A layer that
-  # is listed but not yet written is skipped rather than failing - the epics land
-  # over months, and a red check for a directory nobody has created yet trains
-  # people to ignore red checks.
-  #
-  # Adding a layer therefore means: append it here, add it to the `paths:`
-  # filters above, and set its TFVARS_<NAME> secret. Miss the secret and the plan
-  # fails loudly on the first run, which is the intent.
-  #
-  # Management-account layers - budgets, organization, identity - are absent on
-  # purpose. Both OIDC roles live in the workload account, so CI cannot reach
-  # them at all. See the header.
-  #
-  # modules/ is NOT a layer and must never be added to WORKLOAD_MODULES. It holds
-  # no state and is never applied - it is called by the layers above. It appears
-  # in the `paths:` filters anyway, and deliberately: since ADR 0010 the layers
-  # source it by relative path, so editing a module changes its callers' plans.
-  # Without it in `paths:` a module change would merge with no plan at all, which
-  # is precisely the failure that per-module version tags used to prevent.
-  modules:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.resolve.outputs.matrix }}
-      any: ${{ steps.resolve.outputs.any }}
-    env:
-      WORKLOAD_MODULES: "bootstrap iam network"
-    steps:
-      - uses: actions/checkout@v4
+# jobs:
+#   # Which layers CI runs, resolved against what is actually in the tree.
+#   #
+#   # WORKLOAD_MODULES below is the declaration, in dependency order. A layer that
+#   # is listed but not yet written is skipped rather than failing - the epics land
+#   # over months, and a red check for a directory nobody has created yet trains
+#   # people to ignore red checks.
+#   #
+#   # Adding a layer therefore means: append it here, add it to the `paths:`
+#   # filters above, and set its TFVARS_<NAME> secret. Miss the secret and the plan
+#   # fails loudly on the first run, which is the intent.
+#   #
+#   # Management-account layers - budgets, organization, identity - are absent on
+#   # purpose. Both OIDC roles live in the workload account, so CI cannot reach
+#   # them at all. See the header.
+#   #
+#   # modules/ is NOT a layer and must never be added to WORKLOAD_MODULES. It holds
+#   # no state and is never applied - it is called by the layers above. It appears
+#   # in the `paths:` filters anyway, and deliberately: since ADR 0010 the layers
+#   # source it by relative path, so editing a module changes its callers' plans.
+#   # Without it in `paths:` a module change would merge with no plan at all, which
+#   # is precisely the failure that per-module version tags used to prevent.
+#   modules:
+#     runs-on: ubuntu-latest
+#     outputs:
+#       matrix: ${{ steps.resolve.outputs.matrix }}
+#       any: ${{ steps.resolve.outputs.any }}
+#     env:
+#       WORKLOAD_MODULES: "bootstrap iam network"
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - id: resolve
-        run: |
-          set -euo pipefail
-          items=""
-          for m in ${WORKLOAD_MODULES}; do
-            if [ ! -d "$m" ]; then
-              echo "skipping $m - not written yet"
-              continue
-            fi
-            secret="TFVARS_$(printf '%s' "$m" | tr '[:lower:]-' '[:upper:]_')"
-            items="${items}{\"module\":\"$m\",\"state_key\":\"shared/$m/terraform.tfstate\",\"tfvars_secret\":\"$secret\"},"
-          done
-          matrix="[${items%,}]"
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          if [ "$matrix" = "[]" ]; then
-            echo "any=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "any=true" >> "$GITHUB_OUTPUT"
-          fi
-          echo "resolved: $matrix"
+#       - id: resolve
+#         run: |
+#           set -euo pipefail
+#           items=""
+#           for m in ${WORKLOAD_MODULES}; do
+#             if [ ! -d "$m" ]; then
+#               echo "skipping $m - not written yet"
+#               continue
+#             fi
+#             secret="TFVARS_$(printf '%s' "$m" | tr '[:lower:]-' '[:upper:]_')"
+#             items="${items}{\"module\":\"$m\",\"state_key\":\"shared/$m/terraform.tfstate\",\"tfvars_secret\":\"$secret\"},"
+#           done
+#           matrix="[${items%,}]"
+#           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+#           if [ "$matrix" = "[]" ]; then
+#             echo "any=false" >> "$GITHUB_OUTPUT"
+#           else
+#             echo "any=true" >> "$GITHUB_OUTPUT"
+#           fi
+#           echo "resolved: $matrix"
 
-  plan:
-    name: plan (${{ matrix.module }})
-    needs: modules
-    if: needs.modules.outputs.any == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.modules.outputs.matrix) }}
+#   plan:
+#     name: plan (${{ matrix.module }})
+#     needs: modules
+#     if: needs.modules.outputs.any == 'true'
+#     runs-on: ubuntu-latest
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         include: ${{ fromJSON(needs.modules.outputs.matrix) }}
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
+#       - uses: hashicorp/setup-terraform@v3
+#         with:
+#           terraform_version: ${{ env.TF_VERSION }}
+#           terraform_wrapper: false
 
-      - name: Check formatting
-        run: terraform fmt -check -recursive -diff
-        working-directory: ${{ matrix.module }}
+#       - name: Check formatting
+#         run: terraform fmt -check -recursive -diff
+#         working-directory: ${{ matrix.module }}
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+#       - uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+#           aws-region: ${{ env.AWS_REGION }}
 
-      # bootstrap/ carries a committed backend block; the rest are partial and
-      # take their configuration here. Passing -backend-config to a module that
-      # already has a full block is harmless as long as the values agree.
-      - name: Init
-        run: |
-          terraform init -input=false \
-            -backend-config="bucket=${STATE_BUCKET}" \
-            -backend-config="key=${{ matrix.state_key }}" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="encrypt=true" \
-            -backend-config="use_lockfile=true"
-        working-directory: ${{ matrix.module }}
+#       # bootstrap/ carries a committed backend block; the rest are partial and
+#       # take their configuration here. Passing -backend-config to a module that
+#       # already has a full block is harmless as long as the values agree.
+#       - name: Init
+#         run: |
+#           terraform init -input=false \
+#             -backend-config="bucket=${STATE_BUCKET}" \
+#             -backend-config="key=${{ matrix.state_key }}" \
+#             -backend-config="region=${AWS_REGION}" \
+#             -backend-config="encrypt=true" \
+#             -backend-config="use_lockfile=true"
+#         working-directory: ${{ matrix.module }}
 
-      - name: Validate
-        run: terraform validate
-        working-directory: ${{ matrix.module }}
+#       - name: Validate
+#         run: terraform validate
+#         working-directory: ${{ matrix.module }}
 
-      # terraform.tfvars is gitignored - it carries account ids and email
-      # addresses and this repository is public. CI reconstructs the inputs into
-      # a file that never leaves the runner.
-      #
-      # A SECRET, not a variable. GitHub prints a step's env block into the
-      # workflow log, and the logs of a public repository are public - a
-      # variable here would publish the account ids and alert addresses on every
-      # run. Secrets are masked.
-      - name: Materialise variables
-        run: |
-          if [ -z "${TFVARS}" ]; then
-            echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
-            echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
-            exit 1
-          fi
-          printf '%s\n' "${TFVARS}" > ci.auto.tfvars
-        working-directory: ${{ matrix.module }}
-        env:
-          TFVARS: ${{ secrets[matrix.tfvars_secret] }}
+#       # terraform.tfvars is gitignored - it carries account ids and email
+#       # addresses and this repository is public. CI reconstructs the inputs into
+#       # a file that never leaves the runner.
+#       #
+#       # A SECRET, not a variable. GitHub prints a step's env block into the
+#       # workflow log, and the logs of a public repository are public - a
+#       # variable here would publish the account ids and alert addresses on every
+#       # run. Secrets are masked.
+#       - name: Materialise variables
+#         run: |
+#           if [ -z "${TFVARS}" ]; then
+#             echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
+#             echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
+#             exit 1
+#           fi
+#           printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+#         working-directory: ${{ matrix.module }}
+#         env:
+#           TFVARS: ${{ secrets[matrix.tfvars_secret] }}
 
-      - name: Plan
-        run: terraform plan -input=false -no-color -lock-timeout=5m -out=tf.plan
-        working-directory: ${{ matrix.module }}
+#       - name: Plan
+#         run: terraform plan -input=false -no-color -lock-timeout=5m -out=tf.plan
+#         working-directory: ${{ matrix.module }}
 
-      - name: Summarise
-        if: always()
-        run: |
-          {
-            echo "### ${{ matrix.module }}"
-            echo '```'
-            terraform show -no-color tf.plan 2>/dev/null | tail -60 || echo "no plan - see the step log"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-        working-directory: ${{ matrix.module }}
+#       - name: Summarise
+#         if: always()
+#         run: |
+#           {
+#             echo "### ${{ matrix.module }}"
+#             echo '```'
+#             terraform show -no-color tf.plan 2>/dev/null | tail -60 || echo "no plan - see the step log"
+#             echo '```'
+#           } >> "$GITHUB_STEP_SUMMARY"
+#         working-directory: ${{ matrix.module }}
 
-  apply:
-    name: apply (${{ matrix.module }})
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.modules.outputs.any == 'true'
-    needs: [modules, plan]
-    runs-on: ubuntu-latest
-    # The environment is the second gate. Configure it with required reviewers -
-    # the apply role's trust policy names it explicitly.
-    environment: aws-apply
-    # Serial, in the declared dependency order: bootstrap owns the state bucket
-    # and the KMS key, iam owns the boundary that identity depends on, network
-    # comes after both. Parallel applies here would race on nothing today and on
-    # everything the moment a layer starts reading another's remote state.
-    strategy:
-      fail-fast: true
-      max-parallel: 1
-      matrix:
-        include: ${{ fromJSON(needs.modules.outputs.matrix) }}
+#   apply:
+#     name: apply (${{ matrix.module }})
+#     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.modules.outputs.any == 'true'
+#     needs: [modules, plan]
+#     runs-on: ubuntu-latest
+#     # The environment is the second gate. Configure it with required reviewers -
+#     # the apply role's trust policy names it explicitly.
+#     environment: aws-apply
+#     # Serial, in the declared dependency order: bootstrap owns the state bucket
+#     # and the KMS key, iam owns the boundary that identity depends on, network
+#     # comes after both. Parallel applies here would race on nothing today and on
+#     # everything the moment a layer starts reading another's remote state.
+#     strategy:
+#       fail-fast: true
+#       max-parallel: 1
+#       matrix:
+#         include: ${{ fromJSON(needs.modules.outputs.matrix) }}
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
+#       - uses: hashicorp/setup-terraform@v3
+#         with:
+#           terraform_version: ${{ env.TF_VERSION }}
+#           terraform_wrapper: false
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+#       - uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+#           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Init
-        run: |
-          terraform init -input=false \
-            -backend-config="bucket=${STATE_BUCKET}" \
-            -backend-config="key=${{ matrix.state_key }}" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="encrypt=true" \
-            -backend-config="use_lockfile=true"
-        working-directory: ${{ matrix.module }}
+#       - name: Init
+#         run: |
+#           terraform init -input=false \
+#             -backend-config="bucket=${STATE_BUCKET}" \
+#             -backend-config="key=${{ matrix.state_key }}" \
+#             -backend-config="region=${AWS_REGION}" \
+#             -backend-config="encrypt=true" \
+#             -backend-config="use_lockfile=true"
+#         working-directory: ${{ matrix.module }}
 
-      # A SECRET, not a variable. GitHub prints a step's env block into the
-      # workflow log, and the logs of a public repository are public - a
-      # variable here would publish the account ids and alert addresses on every
-      # run. Secrets are masked.
-      - name: Materialise variables
-        run: |
-          if [ -z "${TFVARS}" ]; then
-            echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
-            echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
-            exit 1
-          fi
-          printf '%s\n' "${TFVARS}" > ci.auto.tfvars
-        working-directory: ${{ matrix.module }}
-        env:
-          TFVARS: ${{ secrets[matrix.tfvars_secret] }}
+#       # A SECRET, not a variable. GitHub prints a step's env block into the
+#       # workflow log, and the logs of a public repository are public - a
+#       # variable here would publish the account ids and alert addresses on every
+#       # run. Secrets are masked.
+#       - name: Materialise variables
+#         run: |
+#           if [ -z "${TFVARS}" ]; then
+#             echo "::error::Secret ${{ matrix.tfvars_secret }} is unset or empty."
+#             echo "::error::Set it with: gh secret set ${{ matrix.tfvars_secret }} < ${{ matrix.module }}/terraform.tfvars"
+#             exit 1
+#           fi
+#           printf '%s\n' "${TFVARS}" > ci.auto.tfvars
+#         working-directory: ${{ matrix.module }}
+#         env:
+#           TFVARS: ${{ secrets[matrix.tfvars_secret] }}
 
-      # Planned and applied in one step on purpose. A plan file from the pull
-      # request would be stale by the time review finishes, and applying a stale
-      # plan is how you delete something that came back.
-      - name: Apply
-        run: terraform apply -input=false -auto-approve -lock-timeout=5m
-        working-directory: ${{ matrix.module }}
+#       # Planned and applied in one step on purpose. A plan file from the pull
+#       # request would be stale by the time review finishes, and applying a stale
+#       # plan is how you delete something that came back.
+#       - name: Apply
+#         run: terraform apply -input=false -auto-approve -lock-timeout=5m
+#         working-directory: ${{ matrix.module }}
