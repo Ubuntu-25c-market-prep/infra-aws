@@ -41,11 +41,14 @@ terraform {
 ###############################################################################
 
 locals {
-  config_file = yamldecode(file("${path.module}/../config.yaml"))
-  config      = merge(local.config_file.common, local.config_file.eks)
+  config = merge(
+    yamldecode(file("${path.module}/../config.yaml")).common,
+    yamldecode(file("${path.module}/config.yaml")).eks,
+  )
 
   name = "${local.config.org_prefix}-shared"
 }
+
 
 provider "aws" {
   region              = local.config.region
