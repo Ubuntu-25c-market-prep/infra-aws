@@ -24,19 +24,20 @@ terraform {
 }
 
 ###############################################################################
-# Configuration comes from the shared ../config.yaml: the `common` section
-# merged with this layer's `network` section. account_id is deliberately NOT in
-# that file - it is committed and this repository is public - so it stays a
-# variable fed by the gitignored terraform.tfvars.
+# Configuration comes from two files: `common` in the repo-root ../config.yaml,
+# shared by every layer, overlaid with this layer's own ./config.yaml. A key in
+# the layer file wins over the same key in common.
 #
-# variables.tf and terraform.tfvars still carry the old inputs. They are unused
-# while the locals below are in place, and are kept so this can be reverted by
-# reverting this file alone.
+# account_id is deliberately in NEITHER - both are committed and this repository
+# is public - so it stays a variable, fed by the gitignored ../.env locally and
+# by a GitHub variable in CI.
 ###############################################################################
 
 locals {
-  config_file = yamldecode(file("${path.module}/../config.yaml"))
-  config      = merge(local.config_file.common, local.config_file.network)
+  config = merge(
+    yamldecode(file("${path.module}/../config.yaml")).common,
+    yamldecode(file("${path.module}/config.yaml")).network,
+  )
 
   name = "${local.config.org_prefix}-shared"
 }

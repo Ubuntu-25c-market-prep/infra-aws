@@ -105,6 +105,96 @@ Organizations, SCPs, budget actions and Identity Center exist nowhere else.
 permission set attaches a permissions boundary that `iam/` creates in the
 workload account.
 
+## Configuration: config.yaml
+
+`network/` and `eks/` take their inputs from **`config.yaml` at the root of this
+repository**, not from a per-layer `terraform.tfvars`. `bootstrap/`, `iam/` and
+`ecr/` have not moved yet.
+
+Every layer's tfvars used to repeat the same three lines — `account_id`,
+`region`, `org_prefix` — and being gitignored, nobody could see another layer's
+settings without asking whoever had the file. One committed file fixes both.
+
+```yaml
+common:                    # merged into every layer
+  region: us-east-1
+  org_prefix: u25c
+
+network:                   # layer 5 only
+  vpc_cidr: 10.0.0.0/16
+  az_count: 2
+
+eks:                       # layer 7 only
+  kubernetes_version: "1.34"
+  node_desired_size: 2
+```
+
+A layer reads `common` plus its own section, in two lines:
+
+```hcl
+locals {
+  config_file = yamldecode(file("${path.module}/../config.yaml"))
+  config      = merge(local.config_file.common, local.config_file.eks)
+}
+```
+
+Then `var.kubernetes_version` becomes `local.config.kubernetes_version`.
+
+**Modules are unaffected.** `modules/vpc` and `modules/eks` still take ordinary
+`variable` blocks — a module's variables are its contract. The YAML is decoded
+once in the layer and plain values are passed down exactly as before.
+
+### What stays out of it, and why
+
+`config.yaml` is committed and **this repository is public**. Two values are
+therefore kept out:
+
+| Value | Why | Supplied by |
+|---|---|---|
+| `account_id` | identifies the AWS account | `TF_VAR_account_id` |
+| `admin_principal_arns` | Identity Center role ARNs | `TF_VAR_admin_principal_arns` |
+
+Locally they come from the gitignored `.env`:
+
+```bash
+source ../.env
+terraform plan
+```
+
+In CI they come from the `AWS_ACCOUNT_ID` repository **variable** and the
+`EKS_ADMIN_PRINCIPAL_ARNS` repository **secret**.
+
+The rule: **if it identifies the account or a person, it belongs in `.env`.**
+`.gitignore` blocks `*.tfvars` and `.env`; it does **not** block `*.yaml`, so
+nothing but that rule stops a secret landing in a committed file.
+
+Note that `TF_VAR_*` for a list or map is parsed as an **HCL expression**, so it
+needs brackets and quotes:
+
+```bash
+export TF_VAR_admin_principal_arns='["arn:aws:iam::…:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_u25c-PlatformEngineer_…"]'
+```
+
+An *unset* `TF_VAR_*` is ignored; an *empty* one is a parse error reading
+`Expected the start of an expression, but found the end of the file`. GitHub
+always defines the variable, so a missing secret produces the second case.
+
+### Changing a value
+
+1. Edit `config.yaml`.
+2. Commit with `Path: /<layer>` in the message so CI plans the right layer.
+3. Read the plan on the pull request.
+
+### Two known gaps
+
+- **A validation was lost.** `az_count` used to enforce `>= 2` (the EKS minimum,
+  ADR 0006) through a `variable` block. A YAML key cannot validate, so that
+  constraint now lives only in a comment.
+- **`config.yaml` is not in the `paths:` filters** of
+  `.github/workflows/terraform.yml`. Editing it changes every layer's inputs and
+  currently triggers no plan there — the same failure `modules/**` is in those
+  filters to prevent.
+
 ## First apply: the two-phase bootstrap
 
 `bootstrap/` creates the bucket that stores everyone else's state, so it cannot
@@ -219,6 +309,74 @@ gh secret set TFVARS_IAM       < iam/terraform.tfvars
 applies until someone adds an OIDC provider to the management account. That is a
 deliberate gap: Organizations, SCPs and Identity Center are exactly where an
 automatic apply from a merged pull request has the largest blast radius.
+
+### The commit-driven workflow
+
+`.github/workflows/terraform-commit.yml` runs alongside the above and picks its
+layer a different way: from the **commit message** rather than from changed
+paths. `terraform.yml` infers what you touched; this one has you state it.
+
+```bash
+git commit -m "[update][network] added a private subnet  Path: /network"
+```
+
+```
+push to any branch    →  terraform plan
+push to main (merge)  →  terraform plan, then terraform apply
+```
+
+`Path: /<layer>` is the only part read. The bracket tags are labels for humans;
+if the two ever disagree, the path wins. Five paths are valid and nothing else
+is — they are the directory names in this repository, so **no `infra-aws/`
+prefix**:
+
+```
+/bootstrap   /iam   /network   /eks   /ecr
+```
+
+A commit with no valid `Path:` is **skipped, not failed** — no plan, no apply,
+no red check. That keeps unrelated commits quiet, but it also means a forgotten
+`Path:` on a merge to `main` means the change is never applied and nothing says
+so. Check the Actions tab if you expected a run.
+
+Selection is a loop over the five known layers asking "does the message say
+`Path: /<this one>`?", rather than pulling a name out of the text. Only strings
+that are already in the workflow are ever tested, so a commit message cannot
+introduce a sixth layer or a path like `../../etc`. The message itself is passed
+through `env:` and never interpolated into a `run:` body — in a public
+repository that would let a crafted commit execute shell with the OIDC role
+attached.
+
+Concurrency is keyed on the **layer**, at job level, because that is what the S3
+state lock is keyed on:
+
+```yaml
+concurrency:
+  group: tf-${{ needs.resolve.outputs.layer }}
+  cancel-in-progress: false
+```
+
+Two pushes touching `network` queue behind each other even from different
+branches; a `network` push and an `eks` push run in parallel. `cancel-in-progress`
+stays false — killing a run mid-apply leaves the state lock held and resources
+half-created.
+
+Configure four repository **variables** and one **secret**:
+
+| Variables | Secret |
+|---|---|
+| `AWS_ACCOUNT_ID`, `TF_STATE_BUCKET`, `AWS_PLAN_ROLE_ARN`, `AWS_APPLY_ROLE_ARN` | `EKS_ADMIN_PRINCIPAL_ARNS` |
+
+The variables are all values already committed in the `backend "s3"` blocks, so
+a variable exposes nothing new. The SSO role ARN is not, so it is masked.
+
+Two things to know before relying on it:
+
+- **Plan runs on every branch**, from anyone who can push, assuming the
+  read-only plan role and reading state from unreviewed code. `terraform.yml`
+  plans on `pull_request` instead. Which posture is right is a team decision.
+- **Both workflows run**, so expect two plans per push. They cannot both apply —
+  S3 native locking serialises them and the second sees an empty diff.
 
 ### Adding a layer to CI
 

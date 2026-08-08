@@ -1,0 +1,36 @@
+network:
+  # The module carves one /24 public subnet per availability zone out of this.
+  vpc_cidr: 10.0.0.0/16
+  # Two is the EKS minimum and what ADR 0006 specifies.
+  az_count: 2
+
+  # Both required by EKS. A VPC not running a cluster can turn them off.
+  enable_dns_support: true
+  enable_dns_hostnames: true
+
+  # default | dedicated | host
+  instance_tenancy: default
+
+  # False gives a VPC with no route to the internet; the default route in the
+  # module disappears with it.
+  create_internet_gateway: true
+
+  # This is what makes the subnets public - ADR 0005 (no NAT) depends on it.
+  map_public_ip_on_launch: true
+
+  # Free, and keeps ECR image-layer pulls (stored in S3) off the public path.
+  enable_s3_gateway_endpoint: true
+
+  # Lets the AWS Load Balancer Controller discover these subnets for public ELBs.
+  subnet_tags:
+    "kubernetes.io/role/elb": "1"
+
+  # Extra routes on the public route table, keyed by a name that only labels the
+  # route in state. Set exactly one target per route, e.g.
+  #   to_office:
+  #     destination_cidr_block: 10.5.0.0/16
+  #     transit_gateway_id: tgw-0123456789abcdef0
+  # The 0.0.0.0/0 route to the IGW is created by create_internet_gateway.
+  extra_routes: {}
+
+
