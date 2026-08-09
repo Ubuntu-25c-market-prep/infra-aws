@@ -85,12 +85,13 @@ module "eks" {
   vpc_id       = data.aws_ssm_parameter.vpc_id.value
   subnet_ids   = split(",", data.aws_ssm_parameter.public_subnet_ids.value)
 
-  kubernetes_version = local.config.kubernetes_version
-  cluster_addons     = local.config.cluster_addons
-  instance_types     = local.config.node_instance_types
-  desired_size       = local.config.node_desired_size
-  min_size           = local.config.node_min_size
-  max_size           = local.config.node_max_size
+  kubernetes_version   = local.config.kubernetes_version
+  cluster_addons       = local.config.cluster_addons
+  cluster_addon_config = local.config.cluster_addon_config
+  instance_types       = local.config.node_instance_types
+  desired_size         = local.config.node_desired_size
+  min_size             = local.config.node_min_size
+  max_size             = local.config.node_max_size
 
   # A PlatformEngineer may only create IAM roles that carry the engineer
   # boundary (identity/main.tf). Without this the apply fails with
