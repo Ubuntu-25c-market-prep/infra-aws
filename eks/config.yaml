@@ -89,3 +89,4 @@ eks:
         requests:
           cpu: 25m
           memory: 64Mi
+  authentication_mode: API
