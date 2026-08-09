@@ -43,6 +43,12 @@ variable "max_size" {
   default     = 3
 }
 
+variable "cluster_addons" {
+  description = "EKS managed add-ons to install, keyed by the AWS add-on name (vpc-cni, coredns, kube-proxy, aws-ebs-csi-driver). The value pins a version; an empty string takes whatever EKS ships as default for this cluster's Kubernetes version, which is the usual case. aws-ebs-csi-driver additionally gets an IRSA role."
+  type        = map(string)
+  default     = {}
+}
+
 variable "permissions_boundary" {
   description = "ARN of a permissions boundary to attach to the IAM roles this module creates. Required when a PlatformEngineer applies (that permission set only allows creating roles that carry the engineer boundary). null when an admin/CI applies."
   type        = string
