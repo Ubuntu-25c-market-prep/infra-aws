@@ -54,9 +54,25 @@ eks:
   #   aws eks describe-addon-configuration --addon-name coredns \
   #     --addon-version v1.12.4-eksbuild.17 --query configurationSchema
   #
-  # vpc-cni is deliberately absent: configuring it rolls the CNI DaemonSet on
-  # every node, so it gets its own change.
   cluster_addon_config:
+
+    vpc-cni:
+      env:
+        # The daemon defaults to DEBUG, which is a lot of log volume per node
+        # for no routine benefit. Put it back to DEBUG while debugging pod
+        # networking, not before.
+        AWS_VPC_K8S_CNI_LOGLEVEL: "INFO"
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+      #
+      # ENABLE_PREFIX_DELEGATION is deliberately NOT set here. It raises how
+      # many IPs a node can hand out, but kubelet's --max-pods is fixed at node
+      # bootstrap (17 on t3.medium) and prefix delegation does not change it on
+      # a running node. Setting it alone buys nothing and reads as though pod
+      # density were solved. Raising density is a node-group change: bootstrap
+      # arguments, a larger instance type, or Karpenter.
 
     aws-ebs-csi-driver:
       # The only functional change here. Creates a gp3 StorageClass marked
