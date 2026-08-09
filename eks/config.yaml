@@ -44,4 +44,48 @@ eks:
     coredns: "v1.12.4-eksbuild.17"           # running; 1.34 default is v1.12.4-eksbuild.18
     kube-proxy: "v1.34.6-eksbuild.11"        # running; 1.34 default is v1.34.6-eksbuild.17
     aws-ebs-csi-driver: "v1.63.1-eksbuild.1" # new install, 1.34 default
-  authentication_mode: API
+
+  # Settings this repository declares for each add-on. An add-on listed here is
+  # switched to resolve_conflicts_on_update = OVERWRITE, so Terraform becomes
+  # the only writer and anything NOT declared resets to the add-on default.
+  # An add-on absent from this map is left on defaults and PRESERVE.
+  #
+  # The schema differs per add-on and per version:
+  #   aws eks describe-addon-configuration --addon-name coredns \
+  #     --addon-version v1.12.4-eksbuild.17 --query configurationSchema
+  #
+  # vpc-cni is deliberately absent: configuring it rolls the CNI DaemonSet on
+  # every node, so it gets its own change.
+  cluster_addon_config:
+
+    aws-ebs-csi-driver:
+      # The only functional change here. Creates a gp3 StorageClass marked
+      # default - without one, every PersistentVolumeClaim on this cluster sits
+      # Pending forever. The existing gp2 class uses kubernetes.io/aws-ebs, the
+      # in-tree provisioner removed in Kubernetes 1.34, so it cannot provision.
+      defaultStorageClass:
+        enabled: true
+
+    coredns:
+      # These match what the cluster already runs. Declared so an add-on
+      # default changing upstream cannot silently move them.
+      replicaCount: 2
+      podDisruptionBudget:
+        enabled: true
+        maxUnavailable: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 70Mi
+        limits:
+          memory: 170Mi
+
+    kube-proxy:
+      # Explicit: ipvs mode is deprecated in Kubernetes 1.35, and this cluster
+      # has always been iptables. Stating it stops a future default from
+      # changing the data path silently.
+      mode: iptables
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi

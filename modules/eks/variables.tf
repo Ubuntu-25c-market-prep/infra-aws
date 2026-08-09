@@ -49,6 +49,12 @@ variable "cluster_addons" {
   default     = {}
 }
 
+variable "cluster_addon_config" {
+  description = "Per-add-on configuration_values, keyed by add-on name. An add-on that appears here is switched to resolve_conflicts_on_update = OVERWRITE, making Terraform the only writer: anything not declared resets to the add-on default. An add-on absent from this map keeps PRESERVE and is left alone. Untyped because the schema differs per add-on - see `aws eks describe-addon-configuration`."
+  type        = any
+  default     = {}
+}
+
 variable "permissions_boundary" {
   description = "ARN of a permissions boundary to attach to the IAM roles this module creates. Required when a PlatformEngineer applies (that permission set only allows creating roles that carry the engineer boundary). null when an admin/CI applies."
   type        = string

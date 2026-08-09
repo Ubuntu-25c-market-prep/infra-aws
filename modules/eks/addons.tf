@@ -25,8 +25,17 @@ resource "aws_eks_addon" "this" {
   # version" - the usual case. Pin only when a specific build is required.
   addon_version = each.value != "" ? each.value : null
 
+  # Settings we declare, as JSON. Empty object when this add-on has no entry in
+  # cluster_addon_config, which leaves it entirely on add-on defaults.
+  configuration_values = jsonencode(lookup(var.cluster_addon_config, each.key, {}))
+
   resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "PRESERVE"
+
+  # OVERWRITE only where we actually declare configuration - there Terraform is
+  # the source of truth and anything changed in-cluster should lose. For an
+  # add-on we do not configure, PRESERVE: taking OVERWRITE on all of them would
+  # mean an unrelated change could reset config we never described.
+  resolve_conflicts_on_update = lookup(var.cluster_addon_config, each.key, null) != null ? "OVERWRITE" : "PRESERVE"
 
   # Only the EBS CSI driver needs its own identity; the rest are covered by the
   # node role's policies.
