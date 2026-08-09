@@ -86,6 +86,7 @@ module "eks" {
   subnet_ids   = split(",", data.aws_ssm_parameter.public_subnet_ids.value)
 
   kubernetes_version = local.config.kubernetes_version
+  cluster_addons     = local.config.cluster_addons
   instance_types     = local.config.node_instance_types
   desired_size       = local.config.node_desired_size
   min_size           = local.config.node_min_size

@@ -17,3 +17,31 @@ eks:
   # The admin ARNs themselves are not here: they are Identity Center role ARNs
   # carrying the account id, and this file is committed. See .env.
   authentication_mode: API
+
+  # EKS managed add-ons. These are AWS objects installed by the control plane,
+  # not Helm charts - platform add-ons (cert-manager, Istio, Prometheus) are
+  # Flux's job and live in gitops-flux.
+  #
+  # Versions are PINNED, not left empty, so nothing moves without a reviewed
+  # commit.
+  #
+  # The first three are deliberately set to the versions ALREADY RUNNING on the
+  # cluster, so registering them as managed add-ons changes ownership and
+  # nothing else. EKS installed them at cluster creation and has tracked them
+  # since; adopting and upgrading in one commit would restart the CNI on every
+  # node for no reason. The upgrade to the 1.34 defaults is a separate change.
+  #
+  # Read the default for a Kubernetes version with:
+  #   aws eks describe-addon-versions --addon-name vpc-cni \
+  #     --kubernetes-version 1.34 \
+  #     --query 'addons[0].addonVersions[?compatibilities[0].defaultVersion==`true`].addonVersion'
+  #
+  # aws-ebs-csi-driver is NOT installed by default, so it has no running version
+  # to match and goes straight to the 1.34 default. It is required before
+  # anything can use a PersistentVolume - Prometheus and Elasticsearch both do.
+  cluster_addons:
+    vpc-cni: "v1.21.2-eksbuild.2"            # running; 1.34 default is v1.22.3-eksbuild.1
+    coredns: "v1.12.4-eksbuild.17"           # running; 1.34 default is v1.12.4-eksbuild.18
+    kube-proxy: "v1.34.6-eksbuild.11"        # running; 1.34 default is v1.34.6-eksbuild.17
+    aws-ebs-csi-driver: "v1.63.1-eksbuild.1" # new install, 1.34 default
+  authentication_mode: API
