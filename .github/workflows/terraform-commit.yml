@@ -14,11 +14,12 @@
 #   git commit -m "[fix][ecr] correct lifecycle policy       Path: /ecr"
 #   git commit -m "[chore][iam] rotate the oidc thumbprint   Path: /iam"
 #   git commit -m "[update][bootstrap] widen state policy    Path: /bootstrap"
+#   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Five are valid, and nothing else is:
+# THIS REPOSITORY. Six are valid, and nothing else is:
 #
-#   /bootstrap   /iam   /network   /eks   /ecr
+#   /bootstrap   /iam   /network   /eks   /ecr   /karpenter
 #
 #
 # WHAT DOES NOT WORK
@@ -112,7 +113,7 @@ jobs:
           # Only these five strings are ever tested, so a commit message cannot
           # introduce a sixth. Both "Path: /eks" and "Path:/eks" are accepted.
           layer=""
-          for l in bootstrap iam network eks ecr; do
+          for l in bootstrap iam network eks ecr karpenter; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac

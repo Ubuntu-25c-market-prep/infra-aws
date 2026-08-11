@@ -1,0 +1,19 @@
+# This layer does not use terraform.tfvars.
+#
+# Normal configuration - region and org_prefix - lives in ../config.yaml, which
+# is committed. Everything else about the cluster is read live from the cluster
+# itself (data.aws_eks_cluster), so there is nothing to configure here.
+#
+# One value is not committed, because it carries the account id. Supply it from
+# the gitignored ../.env:
+#
+#   source ../.env
+#   terraform plan
+#
+# ../.env should contain:
+#
+#   export TF_VAR_account_id=REPLACE-WORKLOAD-ACCOUNT-ID
+#
+# This layer creates IAM roles, an SQS queue and EventBridge rules; it does not
+# need admin_principal_arns. A terraform.tfvars here would still be auto-loaded
+# and override the config above, so this file is kept as a pointer only.
