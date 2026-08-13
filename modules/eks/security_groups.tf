@@ -14,6 +14,13 @@ resource "aws_security_group" "node" {
 
   tags = {
     Name = "${var.cluster_name}-node"
+
+    # Karpenter finds the security group to attach to the nodes it launches by
+    # searching for this tag - it is configured with a securityGroupSelectorTerm
+    # matching karpenter.sh/discovery = <cluster name>. Declared here because it
+    # was originally added by hand: Terraform saw an undeclared tag and planned
+    # to delete it, which would have left Karpenter unable to place new nodes.
+    "karpenter.sh/discovery" = var.cluster_name
   }
 }
 
