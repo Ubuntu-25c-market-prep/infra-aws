@@ -108,34 +108,44 @@ workload account.
 
 ## Configuration: config.yaml
 
-`network/` and `eks/` take their inputs from **`config.yaml` at the root of this
-repository**, not from a per-layer `terraform.tfvars`. `bootstrap/`, `iam/` and
-`ecr/` have not moved yet.
+`network/`, `eks/` and `ecr/` take their inputs from **`config.yaml` at the root
+of this repository** plus a `config.yaml` next to the layer, not from a per-layer
+`terraform.tfvars`. `bootstrap/` and `iam/` have not moved yet.
 
 Every layer's tfvars used to repeat the same three lines — `account_id`,
 `region`, `org_prefix` — and being gitignored, nobody could see another layer's
 settings without asking whoever had the file. One committed file fixes both.
 
 ```yaml
+# config.yaml
 common:                    # merged into every layer
   region: us-east-1
   org_prefix: u25c
 
-network:                   # layer 5 only
+# network/config.yaml      # layer 5 only
+network:
   vpc_cidr: 10.0.0.0/16
   az_count: 2
 
-eks:                       # layer 7 only
+# eks/config.yaml          # layer 7 only
+eks:
   kubernetes_version: "1.34"
   node_desired_size: 2
+
+# ecr/config.yaml          # layer 8 only
+ecr:
+  name_prefix: 25c-project
+  repositories: [api, web]
 ```
 
 A layer reads `common` plus its own section, in two lines:
 
 ```hcl
 locals {
-  config_file = yamldecode(file("${path.module}/../config.yaml"))
-  config      = merge(local.config_file.common, local.config_file.eks)
+  config = merge(
+    yamldecode(file("${path.module}/../config.yaml")).common,
+    yamldecode(file("${path.module}/config.yaml")).eks,
+  )
 }
 ```
 

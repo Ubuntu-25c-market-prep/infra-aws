@@ -31,13 +31,30 @@ terraform {
   }
 }
 
+###############################################################################
+# Configuration comes from two files: `common` in the repo-root ../config.yaml,
+# shared by every layer, overlaid with this layer's own ./config.yaml. A key in
+# the layer file wins over the same key in common.
+#
+# account_id is deliberately in NEITHER - both are committed and this repository
+# is public - so it stays a variable, fed by the gitignored ../.env locally and
+# by a GitHub variable in CI.
+###############################################################################
+
+locals {
+  config = merge(
+    yamldecode(file("${path.module}/../config.yaml")).common,
+    yamldecode(file("${path.module}/config.yaml")).ecr,
+  )
+}
+
 provider "aws" {
-  region              = var.region
+  region              = local.config.region
   allowed_account_ids = [var.account_id]
 
   default_tags {
     tags = {
-      Org        = var.org_prefix
+      Org        = local.config.org_prefix
       Env        = "shared"
       Workstream = "infra"
       ManagedBy  = "terraform"
@@ -49,9 +66,10 @@ provider "aws" {
 module "ecr" {
   source = "../modules/ecr"
 
-  name_prefix  = var.org_prefix
-  repositories = var.repositories
+  # The registry namespace: repositories are created as <name_prefix>/<image>.
+  # Its own key, not org_prefix - see the note in config.yaml.
+  name_prefix  = local.config.name_prefix
+  repositories = local.config.repositories
 
-  untagged_expire_days = var.untagged_expire_days
-  max_image_count      = var.max_image_count
+  untagged_expire_days = local.config.untagged_expire_days
 }
