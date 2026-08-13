@@ -1,25 +1,23 @@
-# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
+# This layer no longer uses terraform.tfvars.
 #
-# This repository is public, so the example carries a placeholder rather than
-# the live account id.
-
-account_id = "REPLACE-WORKLOAD-ACCOUNT-ID" # guards against applying elsewhere
-region     = "us-east-1"
-org_prefix = "u25c"
-
-# One key per image. The key is the short name; the repository is created as
-# <org_prefix>/<key>, so "api" becomes "u25c/api".
+# Normal configuration - region and org_prefix in ../config.yaml, the repository
+# list and the lifecycle limits in ./config.yaml - is committed.
 #
-# Defaults are IMMUTABLE tags and scan-on-push. IMMUTABLE means a tag can never
-# be repointed at different bytes - re-pushing :latest fails on purpose, which
-# is what makes promoting one digest across environments trustworthy. Override
-# per repository if a service genuinely needs a moving tag.
-repositories = {
-  api = {}
-  web = {}
-}
-
-# Cost control. ECR bills per GB per month and nothing expires by itself; a
-# build per commit leaves an untagged layer set behind every time a tag moves.
-untagged_expire_days = 14
-max_image_count      = 30
+# The account id is not committed. Supply it from the gitignored ../.env:
+#
+#   source ../.env
+#   terraform plan
+#
+# ../.env should contain:
+#
+#   export TF_VAR_account_id=REPLACE-WORKLOAD-ACCOUNT-ID
+#
+# Get the id from `aws organizations list-accounts`. Runs in the WORKLOAD
+# account as a PlatformEngineer - sign in through the Identity Center access
+# portal first.
+#
+# Delete the TFVARS_ECR repository secret once this is merged, or CI will keep
+# writing a ci.auto.tfvars full of variables this layer no longer declares.
+#
+# This file is kept as a pointer only; a terraform.tfvars here would still be
+# auto-loaded and would override the config above.

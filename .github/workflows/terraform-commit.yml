@@ -150,9 +150,9 @@ jobs:
       run:
         working-directory: ${{ needs.resolve.outputs.layer }}
     env:
-      # network/ and eks/ read everything else from the committed config.yaml.
-      # An undeclared TF_VAR_* is ignored, so passing both to every layer is
-      # harmless.
+      # network/, eks/ and ecr/ read everything else from the committed
+      # config.yaml. An undeclared TF_VAR_* is ignored, so passing both to every
+      # layer is harmless.
       TF_VAR_account_id: ${{ vars.AWS_ACCOUNT_ID }}
       TF_VAR_admin_principal_arns: ${{ secrets.EKS_ADMIN_PRINCIPAL_ARNS }}
     steps:
@@ -188,9 +188,9 @@ jobs:
 
       - run: terraform validate
 
-      # bootstrap/, iam/ and ecr/ still take their inputs from a tfvars secret.
-      # network/ and eks/ have moved to config.yaml + TF_VAR_*, so their secrets
-      # are optional and this step no-ops when unset.
+      # bootstrap/ and iam/ still take their inputs from a tfvars secret.
+      # network/, eks/ and ecr/ have moved to config.yaml + TF_VAR_*, so their
+      # secrets are optional and this step no-ops when unset.
       - name: Materialise tfvars (layers not yet on config.yaml)
         env:
           TFVARS: ${{ secrets[format('TFVARS_{0}', needs.resolve.outputs.layer)] }}
