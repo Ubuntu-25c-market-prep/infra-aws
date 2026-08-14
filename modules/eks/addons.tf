@@ -37,6 +37,17 @@ resource "aws_eks_addon" "this" {
   # mean an unrelated change could reset config we never described.
   resolve_conflicts_on_update = lookup(var.cluster_addon_config, each.key, null) != null ? "OVERWRITE" : "PRESERVE"
 
+  # Deleting an EKS add-on normally deletes its Kubernetes objects with it.
+  # preserve flips that: EKS stops managing the add-on and leaves the running
+  # DaemonSet/Deployment untouched. That is what turns handing these over to
+  # Flux into a no-op inside the cluster instead of an outage.
+  #
+  # This is read from STATE at delete time, so it has to be applied in its OWN
+  # apply, BEFORE the add-ons are removed from cluster_addons. Setting it in the
+  # same apply that removes them does nothing - a destroy uses the prior state,
+  # not the new config.
+  preserve = true
+
   # Only the EBS CSI driver needs its own identity; the rest are covered by the
   # node role's policies.
   service_account_role_arn = each.key == "aws-ebs-csi-driver" ? one(aws_iam_role.ebs_csi[*].arn) : null
@@ -66,7 +77,12 @@ resource "aws_eks_addon" "this" {
 ###############################################################################
 
 locals {
-  ebs_csi_enabled = contains(keys(var.cluster_addons), "aws-ebs-csi-driver")
+  # Deliberately NOT keyed off cluster_addons any more. Once the driver moves to
+  # Flux the add-on leaves that map, but the driver still runs in the cluster and
+  # still needs this role to create and attach EBS volumes. Tying the two
+  # together would delete the role at the exact moment Flux starts relying on it,
+  # and Flux cannot create an IAM role to replace it.
+  ebs_csi_enabled = var.create_ebs_csi_irsa
 
   # The provider URL without the scheme - IAM condition keys are written
   # against the bare host and path.
