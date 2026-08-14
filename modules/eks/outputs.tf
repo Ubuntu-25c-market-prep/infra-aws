@@ -37,3 +37,8 @@ output "oidc_provider_url" {
   description = "OIDC issuer URL (without https://). Used in IRSA trust policies."
   value       = replace(aws_iam_openid_connect_provider.eks.url, "https://", "")
 }
+
+output "ebs_csi_irsa_role_arn" {
+  description = "ARN of the IRSA role the EBS CSI controller service account assumes. Consumed by the Flux HelmRelease as the eks.amazonaws.com/role-arn annotation on kube-system/ebs-csi-controller-sa. null when create_ebs_csi_irsa is false."
+  value       = one(aws_iam_role.ebs_csi[*].arn)
+}

@@ -55,6 +55,12 @@ variable "cluster_addon_config" {
   default     = {}
 }
 
+variable "create_ebs_csi_irsa" {
+  description = "Create the IRSA role the EBS CSI driver assumes. Independent of cluster_addons on purpose: the driver keeps needing this role after it moves from an EKS managed add-on to a Flux-managed Helm chart, and Flux cannot create IAM roles."
+  type        = bool
+  default     = true
+}
+
 variable "permissions_boundary" {
   description = "ARN of a permissions boundary to attach to the IAM roles this module creates. Required when a PlatformEngineer applies (that permission set only allows creating roles that carry the engineer boundary). null when an admin/CI applies."
   type        = string

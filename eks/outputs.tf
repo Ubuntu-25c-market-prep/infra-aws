@@ -14,3 +14,8 @@ output "oidc_provider_arn" {
   description = "OIDC provider ARN, for IRSA roles."
   value       = module.eks.oidc_provider_arn
 }
+
+output "ebs_csi_irsa_role_arn" {
+  description = "IRSA role ARN for the EBS CSI driver, for the Flux HelmRelease's service account annotation."
+  value       = module.eks.ebs_csi_irsa_role_arn
+}
