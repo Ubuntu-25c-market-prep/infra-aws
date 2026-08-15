@@ -17,9 +17,9 @@
 #   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Six are valid, and nothing else is:
+# THIS REPOSITORY. Seven are valid, and nothing else is:
 #
-#   /bootstrap   /iam   /network   /eks   /ecr   /karpenter
+#   /bootstrap   /iam   /network   /eks   /ecr   /karpenter   /cert-manager
 #
 #
 # WHAT DOES NOT WORK
@@ -113,7 +113,7 @@ jobs:
           # Only these five strings are ever tested, so a commit message cannot
           # introduce a sixth. Both "Path: /eks" and "Path:/eks" are accepted.
           layer=""
-          for l in bootstrap iam network eks ecr karpenter; do
+          for l in bootstrap iam network eks ecr karpenter cert-manager; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
