@@ -15,15 +15,13 @@ ecr:
   # One line per app. The repository is created as <name_prefix>/<name>, so
   # "api" would become "25c-project/api".
   #
-  # Empty because apps-business has no apps in it yet. Add a name here when
-  # there is something to push, e.g.
-  #
-  #   repositories:
-  #     - api
-  #     - web
-  #
-  # Every repository gets the same settings, from the keys below.
-  repositories: []
+  # Add a name here when there is something to push. Every repository gets the
+  # same settings, from the keys below.
+  repositories:
+    # The first business application - apps-business#1. A Go HTTP service,
+    # built multi-arch (amd64 + arm64) and promoted between the app-* namespaces
+    # by tag, never rebuilt. Becomes 25c-project/storefront.
+    - storefront
 
   # Cost control. ECR bills per GB per month and expires nothing by itself.
   # Untagged images are the safe thing to delete - no tag means nothing is
