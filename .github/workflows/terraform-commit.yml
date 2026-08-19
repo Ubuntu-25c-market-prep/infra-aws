@@ -15,12 +15,13 @@
 #   git commit -m "[chore][iam] rotate the oidc thumbprint   Path: /iam"
 #   git commit -m "[update][bootstrap] widen state policy    Path: /bootstrap"
 #   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
+#   git commit -m "[add][sealed-secrets] backup key container Path: /sealed-secrets"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Nine are valid, and nothing else is:
+# THIS REPOSITORY. Ten are valid, and nothing else is:
 #
-#   /bootstrap     /iam      /network         /eks   /ecr
-#   /karpenter     /thanos   /argo-workflows   /cert-manager
+#   /bootstrap     /iam      /network         /eks           /ecr
+#   /karpenter     /thanos   /argo-workflows   /cert-manager  /sealed-secrets
 #
 # Not every directory in this repository is on that list. `budgets/`,
 # `identity/` and `organization/` target the management account and take
@@ -122,7 +123,7 @@ jobs:
           # Hyphens survive the `tr` above (they are in the keep set), so
           # multi-word layer names like argo-workflows match correctly.
           layer=""
-          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager; do
+          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
