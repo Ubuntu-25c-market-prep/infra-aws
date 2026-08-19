@@ -7,7 +7,17 @@ eks:
 
   node_instance_types:
     - t3.medium
-  node_desired_size: 2
+  # Raised 2 -> 3 as a STOPGAP for gitops-flux#101: t3.medium with vpc-cni
+  # allocates 17 pods per node, so two nodes gave a hard ceiling of 34 and the
+  # cluster hit it (33 running, 1 free). KEDA could not schedule and the app-*
+  # namespaces were unusable.
+  #
+  # This is not the right fix. Karpenter is installed but has no NodePools, so
+  # the cluster cannot grow on its own - gitops-flux#10 is the real answer, and
+  # this line should go back to 2 once Spot-first NodePools exist.
+  #
+  # Already within node_max_size, so no limit changes.
+  node_desired_size: 3
   node_min_size: 1
   node_max_size: 3
 
