@@ -7,6 +7,15 @@ eks:
 
   node_instance_types:
     - t3.medium
+  # Pod ceiling per node. The ENI-derived default on a t3.medium is 17, and the
+  # cluster hit it with both nodes at ~60% CPU / ~70% memory - the instances had
+  # compute left that no pod could be scheduled onto. Paired with
+  # ENABLE_PREFIX_DELEGATION in gitops-flux (enable that FIRST); 110 is the EKS
+  # recommendation for instances of 30 vCPUs or fewer.
+  #
+  # Changing this rolls the node group: the launch template gets a new version
+  # and the node group tracks latest_version.
+  node_max_pods: 110
   node_desired_size: 2
   node_min_size: 1
   node_max_size: 3
