@@ -1,0 +1,7 @@
+thanos:
+  # S3 bucket suffix — full name becomes <org_prefix>-<env>-thanos-metrics
+  bucket_suffix: "thanos-metrics"
+
+  # Must match the kube-prometheus-stack HelmRelease service account and namespace
+  namespace: "monitoring"
+  service_account: "kube-prometheus-stack-prometheus"
