@@ -17,16 +17,14 @@
 #   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Eight are valid, and nothing else is:
+# THIS REPOSITORY. Nine are valid, and nothing else is:
 #
-#   /bootstrap   /iam   /network   /eks   /ecr   /karpenter
-#   /thanos      /argo-workflows
+#   /bootstrap     /iam      /network         /eks   /ecr
+#   /karpenter     /thanos   /argo-workflows   /cert-manager
 #
 # Not every directory in this repository is on that list. `budgets/`,
 # `identity/` and `organization/` target the management account and take
-# different credentials, so they are applied by hand on purpose. `cert-manager/`
-# uses the same backend shape as the layers above and could be added - that is
-# its owner's call, not this PR's.
+# different credentials, so they are applied by hand on purpose.
 #
 #
 # WHAT DOES NOT WORK
@@ -124,7 +122,7 @@ jobs:
           # Hyphens survive the `tr` above (they are in the keep set), so
           # multi-word layer names like argo-workflows match correctly.
           layer=""
-          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows; do
+          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
