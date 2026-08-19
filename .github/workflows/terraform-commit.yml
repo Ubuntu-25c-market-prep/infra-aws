@@ -17,9 +17,16 @@
 #   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Six are valid, and nothing else is:
+# THIS REPOSITORY. Eight are valid, and nothing else is:
 #
 #   /bootstrap   /iam   /network   /eks   /ecr   /karpenter
+#   /thanos      /argo-workflows
+#
+# Not every directory in this repository is on that list. `budgets/`,
+# `identity/` and `organization/` target the management account and take
+# different credentials, so they are applied by hand on purpose. `cert-manager/`
+# uses the same backend shape as the layers above and could be added - that is
+# its owner's call, not this PR's.
 #
 #
 # WHAT DOES NOT WORK
@@ -83,7 +90,7 @@ jobs:
   # quoted - never interpolated into the script body, where a crafted commit
   # message would execute as shell with the OIDC role attached. The result is
   # then matched against a fixed allowlist, so nothing reaches `cd` that is not
-  # one of the five known layers.
+  # one of the known layers.
   resolve:
     runs-on: ubuntu-latest
     outputs:
@@ -110,10 +117,14 @@ jobs:
 
           # Ask "does the message say Path: /<this layer>?" once per known layer,
           # rather than pulling a name out of the text and checking it after.
-          # Only these five strings are ever tested, so a commit message cannot
-          # introduce a sixth. Both "Path: /eks" and "Path:/eks" are accepted.
+          # Only the strings in this list are ever tested, so a commit message
+          # cannot introduce one of its own. Both "Path: /eks" and "Path:/eks"
+          # are accepted.
+          #
+          # Hyphens survive the `tr` above (they are in the keep set), so
+          # multi-word layer names like argo-workflows match correctly.
           layer=""
-          for l in bootstrap iam network eks ecr karpenter; do
+          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
