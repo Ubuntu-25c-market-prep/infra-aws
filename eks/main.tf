@@ -89,6 +89,7 @@ module "eks" {
   cluster_addons       = local.config.cluster_addons
   cluster_addon_config = local.config.cluster_addon_config
   instance_types       = local.config.node_instance_types
+  max_pods             = local.config.node_max_pods
   desired_size         = local.config.node_desired_size
   min_size             = local.config.node_min_size
   max_size             = local.config.node_max_size

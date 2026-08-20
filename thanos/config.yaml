@@ -5,3 +5,4 @@ thanos:
   # Must match the kube-prometheus-stack HelmRelease service account and namespace
   namespace: "monitoring"
   service_account: "kube-prometheus-stack-prometheus"
+# trigger CI apply
