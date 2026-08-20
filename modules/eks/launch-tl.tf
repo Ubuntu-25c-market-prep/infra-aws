@@ -37,4 +37,36 @@ resource "aws_launch_template" "node" {
       Name = "${var.cluster_name}-node"
     }
   }
+
+  # Raise the kubelet's pod ceiling.
+  #
+  # A node's --max-pods is fixed at boot. EKS's AL2023 bootstrap derives it from
+  # the instance type's ENI limits - ENIs x (IPs_per_ENI - 1) + 2, which is 17 on
+  # a t3.medium - and it does NOT notice that the VPC CNI has prefix delegation
+  # enabled. So enabling prefix delegation alone changes nothing here; the value
+  # has to be stated, and the nodes have to be replaced to pick it up.
+  #
+  # PREREQUISITE: ENABLE_PREFIX_DELEGATION must already be true on every aws-node
+  # pod (gitops-flux infrastructures/base/aws-vpc-cni). A node that advertises
+  # this many slots while the CNI can only hand out 17 IPs schedules pods it
+  # cannot give addresses to, and they hang in ContainerCreating.
+  #
+  # AL2023 takes bootstrap settings as a NodeConfig document in MIME multipart
+  # user data; EKS appends its own part to what we set here and merges them.
+  user_data = var.max_pods == null ? null : base64encode(<<-EOT
+    MIME-Version: 1.0
+    Content-Type: multipart/mixed; boundary="//"
+
+    --//
+    Content-Type: application/node.eks.aws
+
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      kubelet:
+        config:
+          maxPods: ${var.max_pods}
+    --//--
+  EOT
+  )
 }
