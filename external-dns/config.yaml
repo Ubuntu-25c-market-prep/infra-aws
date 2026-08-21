@@ -1,0 +1,17 @@
+external_dns:
+  # Public hosted zone external-dns manages records in. Looked up by name at
+  # plan time (data.aws_route53_zone) rather than by id, so nothing breaks if
+  # the zone is ever recreated. Zone id today: Z033052035FXAKF23D1RR.
+  #
+  # Same zone cert-manager solves DNS-01 challenges in. The two controllers
+  # coexist: cert-manager may only write TXT records named _acme-challenge.*,
+  # and external-dns only deletes records its own TXT registry claims.
+  hosted_zone_name: "25c-team1.art"
+
+  # Half of the IRSA trust condition's service-account subject. Must match the
+  # namespace and serviceAccount.name pinned in the gitops-flux HelmRelease -
+  # Flux otherwise composes the release name as <targetNamespace>-<name> and
+  # the subject becomes system:serviceaccount:external-dns:external-dns-external-dns,
+  # which will not match this trust policy.
+  namespace: "external-dns"
+  service_account: "external-dns"

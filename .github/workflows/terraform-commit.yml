@@ -21,7 +21,7 @@
 # THIS REPOSITORY. Ten are valid, and nothing else is:
 #
 #   /bootstrap     /iam      /network         /eks           /ecr
-#   /karpenter     /thanos   /argo-workflows   /cert-manager  /sealed-secrets
+#   /karpenter     /thanos   /argo-workflows   /cert-manager  /sealed-secrets /external-dns
 #
 # Not every directory in this repository is on that list. `budgets/`,
 # `identity/` and `organization/` target the management account and take
@@ -123,7 +123,7 @@ jobs:
           # Hyphens survive the `tr` above (they are in the keep set), so
           # multi-word layer names like argo-workflows match correctly.
           layer=""
-          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets; do
+          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets external-dns; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
