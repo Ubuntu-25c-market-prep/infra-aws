@@ -109,3 +109,41 @@ module "karpenter" {
   node_security_group_id    = data.aws_security_group.node.id
   cluster_security_group_id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
 }
+
+###############################################################################
+# EC2 Spot service-linked role.
+#
+# Spot capacity is requested through CreateFleet, which requires the account to
+# hold AWSServiceRoleForEC2Spot. AWS creates that role automatically on the
+# first spot launch, but only when the calling principal has
+# iam:CreateServiceLinkedRole - and the Karpenter controller role deliberately
+# does not. Without the role every spot launch fails:
+#
+#   AuthFailure.ServiceLinkedRoleCreationNotPermitted: The provided credentials
+#   do not have permission to create the service-linked role for EC2 Spot
+#   Instances.
+#
+# Karpenter reads that as UnfulfillableCapacity and falls back to on-demand, so
+# the spot-first NodePools in gitops-flux silently buy nothing - and because
+# consolidation keeps retrying, it produces a failed CreateFleet every few
+# minutes rather than one visible error.
+#
+# ACCOUNT-WIDE SINGLETON, not a per-cluster resource. It lives in this layer
+# because Karpenter is the only thing in this account that requests spot, but a
+# second cluster must NOT declare it again - the apply would fail with
+# InvalidInput / role already exists. If it ever gets created by hand, import it
+# rather than recreating it:
+#
+#   terraform import aws_iam_service_linked_role.spot \
+#     arn:aws:iam::<account_id>:role/aws-service-role/spot.amazonaws.com/AWSServiceRoleForEC2Spot
+#
+# No permissions_boundary here, unlike the roles in modules/karpenter: AWS does
+# not accept a boundary on a service-linked role. Deletion is also safe by
+# construction - AWS refuses to remove the role while spot instances still
+# depend on it, so a layer destroy fails loudly instead of stranding capacity.
+###############################################################################
+
+resource "aws_iam_service_linked_role" "spot" {
+  aws_service_name = "spot.amazonaws.com"
+  description      = "Lets EC2 Spot launch and manage spot instances for Karpenter."
+}
