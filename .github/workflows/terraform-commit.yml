@@ -16,12 +16,20 @@
 #   git commit -m "[update][bootstrap] widen state policy    Path: /bootstrap"
 #   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
 #   git commit -m "[add][sealed-secrets] backup key container Path: /sealed-secrets"
+#   git commit -m "[add][keda] operator irsa role             Path: /keda"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Ten are valid, and nothing else is:
+# THIS REPOSITORY. Twelve are valid, and nothing else is:
 #
-#   /bootstrap     /iam      /network         /eks           /ecr
-#   /karpenter     /thanos   /argo-workflows   /cert-manager  /sealed-secrets /external-dns
+#   /bootstrap     /iam       /network          /eks            /ecr
+#   /karpenter     /thanos    /argo-workflows   /cert-manager   /sealed-secrets
+#   /external-dns  /keda
+#
+# THIS LIST AND THE `for l in ...` ALLOWLIST BELOW MUST BE KEPT IN STEP. A new
+# layer directory that is not added to the allowlist is silently skipped - the
+# run goes green in about eight seconds having planned nothing. That is what
+# happened to /keda on first commit, and to /external-dns before it (the count
+# above still read "Ten" with eleven entries listed).
 #
 # Not every directory in this repository is on that list. `budgets/`,
 # `identity/` and `organization/` target the management account and take
@@ -123,7 +131,7 @@ jobs:
           # Hyphens survive the `tr` above (they are in the keep set), so
           # multi-word layer names like argo-workflows match correctly.
           layer=""
-          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets external-dns; do
+          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets external-dns keda; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
