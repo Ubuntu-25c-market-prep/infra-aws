@@ -1,0 +1,23 @@
+keda:
+  # Half of the IRSA trust condition's service-account subject. Must match
+  # serviceAccount.operator.name in the gitops-flux HelmRelease.
+  #
+  # Note the KEDA chart nests this under `operator`: serviceAccount.operator.name
+  # and serviceAccount.operator.annotations. An annotation written to the
+  # top-level serviceAccount.annotations is accepted by Helm and silently
+  # ignored, which produces a pod with no role and an AccessDenied at the first
+  # poll rather than an error at release time.
+  namespace: "keda"
+  service_account: "keda-operator"
+
+  # SQS queue name prefixes KEDA may read depth from, one per application
+  # environment. Wildcards are queue NAMES, not ARNs.
+  #
+  # The only queue that exists today is `u25c-shared` - Karpenter's spot
+  # interruption queue - and it is deliberately not matched. KEDA has no reason
+  # to read the platform's interruption signal, and a `u25c-*` prefix here would
+  # hand it over for no gain.
+  queue_name_prefixes:
+    - "u25c-dev-*"
+    - "u25c-stage-*"
+    - "u25c-prod-*"
