@@ -3,7 +3,7 @@
 #
 # Nothing here is written into the module: the zones come from whatever region
 # the caller's provider points at, and the CIDRs are carved out of the VPC
-# block. Only how many (az_count) is a decision the caller makes.
+# block. Only how many (az_count) is a decision the caller makes. 
 ###############################################################################
 
 data "aws_availability_zones" "available" {
