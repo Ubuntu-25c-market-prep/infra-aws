@@ -1,9 +1,55 @@
-# Terraform for AWS primitives. Path ownership follows the workstream that owns the resource.
-/network/    @Ubuntu-25c-market-prep/infra
-/eks/        @Ubuntu-25c-market-prep/infra
-/ecr/        @Ubuntu-25c-market-prep/infra
-/iam/        @Ubuntu-25c-market-prep/security
-/bedrock/    @Ubuntu-25c-market-prep/bedrock
+# Terraform for AWS primitives. Path ownership follows the workstream that owns
+# the resource.
+#
+# Fallback, FIRST on purpose. In CODEOWNERS the LAST matching pattern wins, so a
+# `*` line at the bottom of the file silently overrides every specific rule
+# above it - which is what this file did until #65: PRs touching only /eks/ and
+# /modules/eks/, both mapped to @infra, were routed to @cto and nothing else
+# (#59). gitops-flux#106 fixed the identical bug in that repository. Keep this
+# line above the per-layer rules.
+*                    @Ubuntu-25c-market-prep/cto
+
+# Foundation - AWS Organization and account structure, Identity Center
+# permission sets, SCP guardrails, the tfstate bucket and its KMS keys, and the
+# GitHub OIDC provider. One epic (aws-foundation), workstream @security.
+/organization/       @Ubuntu-25c-market-prep/security
+/identity/           @Ubuntu-25c-market-prep/security
+/bootstrap/          @Ubuntu-25c-market-prep/security
+/iam/                @Ubuntu-25c-market-prep/security
+
+# Core AWS primitives - VPC, EKS, ECR.
+/network/            @Ubuntu-25c-market-prep/infra
+/eks/                @Ubuntu-25c-market-prep/infra
+/ecr/                @Ubuntu-25c-market-prep/infra
+
 # Called by every layer above, so review is centralised on @infra.
-/modules/    @Ubuntu-25c-market-prep/infra
-*            @Ubuntu-25c-market-prep/cto
+/modules/            @Ubuntu-25c-market-prep/infra
+
+# Utils - the IRSA roles and secret storage that cert-manager, external-dns and
+# sealed-secrets consume from gitops-flux. No rules existed for these at all
+# before #65, so every one of them fell through to the fallback and the
+# workstream had to add its own reviewers by hand on #60 and #61.
+/cert-manager/       @Ubuntu-25c-market-prep/utils
+/external-dns/       @Ubuntu-25c-market-prep/utils
+/sealed-secrets/     @Ubuntu-25c-market-prep/utils
+
+# Scaling - the Karpenter controller role and KEDA's operator role.
+/karpenter/          @Ubuntu-25c-market-prep/scaling
+/keda/               @Ubuntu-25c-market-prep/scaling
+
+# Monitoring - Thanos object storage and the role Prometheus writes with.
+/thanos/             @Ubuntu-25c-market-prep/monitoring
+
+# FinOps - AWS Budgets and cost anomaly detection.
+/budgets/            @Ubuntu-25c-market-prep/finops
+
+# Bedrock - model access, guardrails and private endpoints. No directory yet;
+# the rule is here so the layer lands on its workstream the day it appears
+# rather than on the fallback.
+/bedrock/            @Ubuntu-25c-market-prep/bedrock
+
+# One thing this file cannot fix: GitHub does not request a review from a team
+# the pull request author belongs to. Since people work in their own
+# workstream's directories, you will usually not see your own team requested on
+# your own PR. That is expected, not a regression - add reviewers by hand in
+# that case rather than concluding this file is broken again.

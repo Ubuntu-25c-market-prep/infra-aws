@@ -1,0 +1,19 @@
+# This layer does not use terraform.tfvars.
+#
+# Region and org_prefix come from ../config.yaml; the hosted zone and service
+# account names from ./config.yaml. Both are committed. The cluster's OIDC
+# issuer is read live from the cluster and the zone id is looked up by name,
+# so there is nothing else to configure here.
+#
+# One value is not committed, because it carries the account id. Supply it from
+# the gitignored ../.env:
+#
+#   source ../.env
+#   terraform plan
+#
+# ../.env should contain:
+#
+#   export TF_VAR_account_id=REPLACE-WORKLOAD-ACCOUNT-ID
+#
+# A terraform.tfvars here would be auto-loaded and silently override the config
+# above, so this file is kept as a pointer only.

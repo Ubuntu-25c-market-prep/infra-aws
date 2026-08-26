@@ -12,5 +12,5 @@ output "repository_arns" {
 
 output "registry_url" {
   description = "Registry host to docker login against."
-  value       = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com"
+  value       = "${var.account_id}.dkr.ecr.${local.config.region}.amazonaws.com"
 }

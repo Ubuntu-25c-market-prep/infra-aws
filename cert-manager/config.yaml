@@ -1,0 +1,12 @@
+cert_manager:
+  # Public hosted zone cert-manager solves DNS-01 challenges in. Looked up by
+  # name at plan time (data.aws_route53_zone) rather than by id, so nothing
+  # breaks if the zone is ever recreated. Zone id today: Z033052035FXAKF23D1RR.
+  hosted_zone_name: "25c-team1.art"
+
+  # Half of the IRSA trust condition's service-account subject. Must match the
+  # namespace and serviceAccount.name pinned in the gitops-flux HelmRelease -
+  # see infrastructures/base/cert-manager/helmrelease.yaml.
+  namespace: "cert-manager"
+  service_account: "cert-manager"
+  

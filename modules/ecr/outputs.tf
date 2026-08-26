@@ -9,7 +9,7 @@ output "repository_arns" {
 }
 
 output "repository_names" {
-  description = "Full name of each repository, keyed by short image name (e.g. api -> u25c/api)."
+  description = "Full name of each repository, keyed by short image name (e.g. api -> 25c-project/api)."
   value       = { for k, r in aws_ecr_repository.this : k => r.name }
 }
 

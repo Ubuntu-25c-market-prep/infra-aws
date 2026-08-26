@@ -50,3 +50,13 @@ output "s3_gateway_endpoint_id" {
   description = "ID of the S3 gateway endpoint, or null when disabled."
   value       = one(aws_vpc_endpoint.s3[*].id)
 }
+
+output "pod_subnet_ids" {
+  description = "IDs of the pod subnets the VPC CNI draws /28 prefixes from, in count order."
+  value       = aws_subnet.pods[*].id
+}
+
+output "pod_subnet_cidrs" {
+  description = "IPv4 CIDR of each pod subnet, in count order."
+  value       = aws_subnet.pods[*].cidr_block
+}

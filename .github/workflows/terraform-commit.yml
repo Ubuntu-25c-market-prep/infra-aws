@@ -14,11 +14,26 @@
 #   git commit -m "[fix][ecr] correct lifecycle policy       Path: /ecr"
 #   git commit -m "[chore][iam] rotate the oidc thumbprint   Path: /iam"
 #   git commit -m "[update][bootstrap] widen state policy    Path: /bootstrap"
+#   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
+#   git commit -m "[add][sealed-secrets] backup key container Path: /sealed-secrets"
+#   git commit -m "[add][keda] operator irsa role             Path: /keda"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Five are valid, and nothing else is:
+# THIS REPOSITORY. Twelve are valid, and nothing else is:
 #
-#   /bootstrap   /iam   /network   /eks   /ecr
+#   /bootstrap     /iam       /network          /eks            /ecr
+#   /karpenter     /thanos    /argo-workflows   /cert-manager   /sealed-secrets
+#   /external-dns  /keda
+#
+# THIS LIST AND THE `for l in ...` ALLOWLIST BELOW MUST BE KEPT IN STEP. A new
+# layer directory that is not added to the allowlist is silently skipped - the
+# run goes green in about eight seconds having planned nothing. That is what
+# happened to /keda on first commit, and to /external-dns before it (the count
+# above still read "Ten" with eleven entries listed).
+#
+# Not every directory in this repository is on that list. `budgets/`,
+# `identity/` and `organization/` target the management account and take
+# different credentials, so they are applied by hand on purpose.
 #
 #
 # WHAT DOES NOT WORK
@@ -82,7 +97,7 @@ jobs:
   # quoted - never interpolated into the script body, where a crafted commit
   # message would execute as shell with the OIDC role attached. The result is
   # then matched against a fixed allowlist, so nothing reaches `cd` that is not
-  # one of the five known layers.
+  # one of the known layers.
   resolve:
     runs-on: ubuntu-latest
     outputs:
@@ -109,10 +124,14 @@ jobs:
 
           # Ask "does the message say Path: /<this layer>?" once per known layer,
           # rather than pulling a name out of the text and checking it after.
-          # Only these five strings are ever tested, so a commit message cannot
-          # introduce a sixth. Both "Path: /eks" and "Path:/eks" are accepted.
+          # Only the strings in this list are ever tested, so a commit message
+          # cannot introduce one of its own. Both "Path: /eks" and "Path:/eks"
+          # are accepted.
+          #
+          # Hyphens survive the `tr` above (they are in the keep set), so
+          # multi-word layer names like argo-workflows match correctly.
           layer=""
-          for l in bootstrap iam network eks ecr; do
+          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets external-dns keda; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
@@ -150,9 +169,9 @@ jobs:
       run:
         working-directory: ${{ needs.resolve.outputs.layer }}
     env:
-      # network/ and eks/ read everything else from the committed config.yaml.
-      # An undeclared TF_VAR_* is ignored, so passing both to every layer is
-      # harmless.
+      # network/, eks/ and ecr/ read everything else from the committed
+      # config.yaml. An undeclared TF_VAR_* is ignored, so passing both to every
+      # layer is harmless.
       TF_VAR_account_id: ${{ vars.AWS_ACCOUNT_ID }}
       TF_VAR_admin_principal_arns: ${{ secrets.EKS_ADMIN_PRINCIPAL_ARNS }}
     steps:
@@ -188,9 +207,9 @@ jobs:
 
       - run: terraform validate
 
-      # bootstrap/, iam/ and ecr/ still take their inputs from a tfvars secret.
-      # network/ and eks/ have moved to config.yaml + TF_VAR_*, so their secrets
-      # are optional and this step no-ops when unset.
+      # bootstrap/ and iam/ still take their inputs from a tfvars secret.
+      # network/, eks/ and ecr/ have moved to config.yaml + TF_VAR_*, so their
+      # secrets are optional and this step no-ops when unset.
       - name: Materialise tfvars (layers not yet on config.yaml)
         env:
           TFVARS: ${{ secrets[format('TFVARS_{0}', needs.resolve.outputs.layer)] }}

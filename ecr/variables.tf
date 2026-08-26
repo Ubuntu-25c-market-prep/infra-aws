@@ -1,39 +1,15 @@
+###############################################################################
+# Everything else this layer needs is in ./config.yaml and ../config.yaml. Only
+# what must not be committed lives here, supplied by TF_VAR_* from the
+# gitignored ../.env locally, and by the CI workflow on a runner.
+###############################################################################
+
 variable "account_id" {
-  description = "Workload AWS account this layer is allowed to deploy to."
+  description = "Workload AWS account this layer is allowed to deploy to. Guards every resource via allowed_account_ids - a wrong-account apply fails immediately instead of half-succeeding."
   type        = string
-}
 
-variable "region" {
-  description = "AWS region."
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "org_prefix" {
-  description = "Short organisation code. Doubles as the registry namespace, so repositories are named <org_prefix>/<image>."
-  type        = string
-  default     = "u25c"
-}
-
-variable "repositories" {
-  description = "Repositories to create, keyed by short image name. See modules/ecr for the per-repository overrides."
-  type = map(object({
-    image_tag_mutability = optional(string)
-    scan_on_push         = optional(bool)
-    untagged_expire_days = optional(number)
-    max_image_count      = optional(number)
-  }))
-  default = {}
-}
-
-variable "untagged_expire_days" {
-  description = "Delete untagged images this many days after they were pushed."
-  type        = number
-  default     = 14
-}
-
-variable "max_image_count" {
-  description = "Keep at most this many images per repository."
-  type        = number
-  default     = 30
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.account_id))
+    error_message = "account_id must be a 12-digit AWS account id."
+  }
 }

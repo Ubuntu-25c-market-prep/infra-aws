@@ -7,6 +7,15 @@ eks:
 
   node_instance_types:
     - t3.medium
+  # Pod ceiling per node. The ENI-derived default on a t3.medium is 17, and the
+  # cluster hit it with both nodes at ~60% CPU / ~70% memory - the instances had
+  # compute left that no pod could be scheduled onto. Paired with
+  # ENABLE_PREFIX_DELEGATION in gitops-flux (enable that FIRST); 110 is the EKS
+  # recommendation for instances of 30 vCPUs or fewer.
+  #
+  # Changing this rolls the node group: the launch template gets a new version
+  # and the node group tracks latest_version.
+  node_max_pods: 110
   node_desired_size: 2
   node_min_size: 1
   node_max_size: 3
@@ -18,19 +27,24 @@ eks:
   # carrying the account id, and this file is committed. See .env.
   authentication_mode: API
 
-  # EKS managed add-ons. These are AWS objects installed by the control plane,
-  # not Helm charts - platform add-ons (cert-manager, Istio, Prometheus) are
-  # Flux's job and live in gitops-flux.
+  # No EKS managed add-ons any more. vpc-cni, coredns, kube-proxy and
+  # aws-ebs-csi-driver are now Flux-managed Helm charts, in gitops-flux under
+  # infrastructures/base/<chart>.
   #
-  # Versions are PINNED, not left empty, so nothing moves without a reviewed
-  # commit.
+  # This map is emptied rather than deleted: eks/main.tf reads the key, so it
+  # has to exist.
   #
-  # These must move together with kubernetes_version above: an add-on version is
-  # only supported against the Kubernetes versions AWS lists it for. Read the
-  # default for a version with:
-  #   aws eks describe-addon-versions --addon-name vpc-cni \
-  #     --kubernetes-version 1.34 \
-  #     --query 'addons[0].addonVersions[?compatibilities[0].defaultVersion==`true`].addonVersion'
+  # Removing them here UNREGISTERS the add-ons from EKS and leaves the running
+  # pods alone, because aws_eks_addon carries preserve = true
+  # (modules/eks/addons.tf). Without that this would delete pod networking and
+  # DNS from a live cluster.
+  #
+  # Versions running at handover. The Helm charts are pinned to match, and this
+  # is what a rollback restores:
+  #   vpc-cni             v1.22.3-eksbuild.1
+  #   coredns             v1.12.4-eksbuild.18
+  #   kube-proxy          v1.34.6-eksbuild.17
+  #   aws-ebs-csi-driver  v1.63.1-eksbuild.1
   #
   # Every add-on here is on the 1.34 default. Keep it that way: moving one of
   # them independently of kubernetes_version is how a cluster ends up on a
@@ -40,65 +54,35 @@ eks:
     coredns: "v1.12.4-eksbuild.18"           # 1.34 default
     kube-proxy: "v1.34.6-eksbuild.17"        # 1.34 default
     aws-ebs-csi-driver: "v1.63.1-eksbuild.1" # 1.34 default
+  # To roll back: restore the four lines above and apply - but suspend the Flux
+  # HelmReleases first, or EKS and Helm will both claim the same objects.
+  cluster_addons: {}
 
-  # Settings this repository declares for each add-on. An add-on listed here is
-  # switched to resolve_conflicts_on_update = OVERWRITE, so Terraform becomes
-  # the only writer and anything NOT declared resets to the add-on default.
-  # An add-on absent from this map is left on defaults and PRESERVE.
+  # Emptied along with cluster_addons above. Every setting that used to be here
+  # is now a Helm value on the matching HelmRelease in gitops-flux.
   #
-  # The schema differs per add-on and per version:
-  #   aws eks describe-addon-configuration --addon-name coredns \
-  #     --addon-version v1.12.4-eksbuild.17 --query configurationSchema
+  # They must keep matching what is RUNNING. If a chart renders a different spec
+  # than the live object, Helm does not just take ownership on adoption - it
+  # rolls the pods. For coredns or vpc-cni that is a cluster-wide event.
   #
-  cluster_addon_config:
-
-    vpc-cni:
-      env:
-        # The daemon defaults to DEBUG, which is a lot of log volume per node
-        # for no routine benefit. Put it back to DEBUG while debugging pod
-        # networking, not before.
-        AWS_VPC_K8S_CNI_LOGLEVEL: "INFO"
-      resources:
-        requests:
-          cpu: 25m
-          memory: 64Mi
-      #
-      # ENABLE_PREFIX_DELEGATION is deliberately NOT set here. It raises how
-      # many IPs a node can hand out, but kubelet's --max-pods is fixed at node
-      # bootstrap (17 on t3.medium) and prefix delegation does not change it on
-      # a running node. Setting it alone buys nothing and reads as though pod
-      # density were solved. Raising density is a node-group change: bootstrap
-      # arguments, a larger instance type, or Karpenter.
-
-    aws-ebs-csi-driver:
-      # The only functional change here. Creates a gp3 StorageClass marked
-      # default - without one, every PersistentVolumeClaim on this cluster sits
-      # Pending forever. The existing gp2 class uses kubernetes.io/aws-ebs, the
-      # in-tree provisioner removed in Kubernetes 1.34, so it cannot provision.
-      defaultStorageClass:
-        enabled: true
-
-    coredns:
-      # These match what the cluster already runs. Declared so an add-on
-      # default changing upstream cannot silently move them.
-      replicaCount: 2
-      podDisruptionBudget:
-        enabled: true
-        maxUnavailable: 1
-      resources:
-        requests:
-          cpu: 100m
-          memory: 70Mi
-        limits:
-          memory: 170Mi
-
-    kube-proxy:
-      # Explicit: ipvs mode is deprecated in Kubernetes 1.35, and this cluster
-      # has always been iptables. Stating it stops a future default from
-      # changing the data path silently.
-      mode: iptables
-      resources:
-        requests:
-          cpu: 25m
-          memory: 64Mi
+  # What was declared here, and therefore what the charts must reproduce:
+  #
+  #   vpc-cni             env AWS_VPC_K8S_CNI_LOGLEVEL=INFO
+  #                       requests cpu 25m, memory 64Mi
+  #                       (ENABLE_PREFIX_DELEGATION deliberately unset - kubelet
+  #                        --max-pods is fixed at node bootstrap, so it buys
+  #                        nothing on a running node)
+  #
+  #   coredns             replicaCount 2
+  #                       podDisruptionBudget maxUnavailable 1
+  #                       requests cpu 100m, memory 70Mi; limits memory 170Mi
+  #
+  #   kube-proxy          mode iptables (ipvs is deprecated in 1.35, and this
+  #                       cluster has always been iptables)
+  #                       requests cpu 25m, memory 64Mi
+  #
+  #   aws-ebs-csi-driver  a gp3 StorageClass marked default. Without one every
+  #                       PersistentVolumeClaim sits Pending forever - the old
+  #                       gp2 class uses the in-tree provisioner removed in 1.34.
+  cluster_addon_config: {}
   authentication_mode: API

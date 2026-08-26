@@ -25,6 +25,18 @@ variable "instance_types" {
   default     = ["t3.medium"]
 }
 
+variable "max_pods" {
+  description = <<-EOT
+    Pods the kubelet will accept per node. null keeps EKS's ENI-derived default
+    (17 on a t3.medium), which is what strands compute on small instances.
+    Only raise this above the ENI-derived value when the VPC CNI has prefix
+    delegation enabled, or nodes accept pods they cannot assign IPs to.
+    110 is the EKS-recommended ceiling for instances with 30 or fewer vCPUs.
+  EOT
+  type        = number
+  default     = null
+}
+
 variable "desired_size" {
   description = "Number of nodes the node group aims to run."
   type        = number
@@ -53,6 +65,12 @@ variable "cluster_addon_config" {
   description = "Per-add-on configuration_values, keyed by add-on name. An add-on that appears here is switched to resolve_conflicts_on_update = OVERWRITE, making Terraform the only writer: anything not declared resets to the add-on default. An add-on absent from this map keeps PRESERVE and is left alone. Untyped because the schema differs per add-on - see `aws eks describe-addon-configuration`."
   type        = any
   default     = {}
+}
+
+variable "create_ebs_csi_irsa" {
+  description = "Create the IRSA role the EBS CSI driver assumes. Independent of cluster_addons on purpose: the driver keeps needing this role after it moves from an EKS managed add-on to a Flux-managed Helm chart, and Flux cannot create IAM roles."
+  type        = bool
+  default     = true
 }
 
 variable "permissions_boundary" {

@@ -1,0 +1,29 @@
+ecr:
+  # The namespace every repository sits under. ECR is one flat list of names per
+  # account, so a bare "api" claims that name account-wide and collides with the
+  # next project's; the prefix keeps ours apart and lets one IAM rule
+  # (repository/<prefix>/*) cover all of them.
+  #
+  # Deliberately NOT org_prefix from ../config.yaml. That one names the state
+  # buckets, the IAM boundary, the permission sets, the OUs, the VPC and the
+  # cluster - changing it there rebuilds the platform. This is ECR's alone.
+  #
+  # No environment in the name on purpose: one registry serves dev, staging and
+  # prod. The same image is promoted between them by tag, never rebuilt.
+  name_prefix: 25c-project
+
+  # One line per app. The repository is created as <name_prefix>/<name>, so
+  # "api" would become "25c-project/api".
+  #
+  # Add a name here when there is something to push. Every repository gets the
+  # same settings, from the keys below.
+  repositories:
+    # The first business application - apps-business#1. A Go HTTP service,
+    # built multi-arch (amd64 + arm64) and promoted between the app-* namespaces
+    # by tag, never rebuilt. Becomes 25c-project/storefront.
+    - storefront
+
+  # Cost control. ECR bills per GB per month and expires nothing by itself.
+  # Untagged images are the safe thing to delete - no tag means nothing is
+  # deployed from them. Tagged images are never deleted automatically.
+  untagged_expire_days: 14

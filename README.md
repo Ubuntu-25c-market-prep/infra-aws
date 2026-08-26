@@ -91,6 +91,7 @@ Onboarding a person, including how one-time passwords are handed out, is
 | `network/` | workload | `@infra` | VPC, two public subnets across 2 AZs, internet gateway, S3 gateway endpoint. No NAT and no private subnets — ADR 0005 / 0006 | applied |
 | `eks/` | workload | `@infra` | Cluster, managed node group, IRSA OIDC provider, access entries. No add-ons yet | applied |
 | `ecr/` | workload | `@infra` | Registries, immutable tags, lifecycle expiry. Shared across environments — one image, promoted | written |
+| `karpenter/` | workload | `@infra` | Karpenter controller IRSA role, dedicated node role + access entry, interruption SQS queue + EventBridge rules, `karpenter.sh/discovery` tags. Reads the cluster live (`data.aws_eks_cluster`); no `eks/` coupling. In-cluster install is in `gitops-flux` | written |
 | `bedrock/` | workload | `@bedrock` | Model access, guardrails, VPC endpoints — *not written yet, Wave 7 epic* | — |
 | `modules/` | — | `@infra` | Reusable modules called by the layers above — never applied directly | — |
 
@@ -107,34 +108,44 @@ workload account.
 
 ## Configuration: config.yaml
 
-`network/` and `eks/` take their inputs from **`config.yaml` at the root of this
-repository**, not from a per-layer `terraform.tfvars`. `bootstrap/`, `iam/` and
-`ecr/` have not moved yet.
+`network/`, `eks/` and `ecr/` take their inputs from **`config.yaml` at the root
+of this repository** plus a `config.yaml` next to the layer, not from a per-layer
+`terraform.tfvars`. `bootstrap/` and `iam/` have not moved yet.
 
 Every layer's tfvars used to repeat the same three lines — `account_id`,
 `region`, `org_prefix` — and being gitignored, nobody could see another layer's
 settings without asking whoever had the file. One committed file fixes both.
 
 ```yaml
+# config.yaml
 common:                    # merged into every layer
   region: us-east-1
   org_prefix: u25c
 
-network:                   # layer 5 only
+# network/config.yaml      # layer 5 only
+network:
   vpc_cidr: 10.0.0.0/16
   az_count: 2
 
-eks:                       # layer 7 only
+# eks/config.yaml          # layer 7 only
+eks:
   kubernetes_version: "1.34"
   node_desired_size: 2
+
+# ecr/config.yaml          # layer 8 only
+ecr:
+  name_prefix: 25c-project
+  repositories: [api, web]
 ```
 
 A layer reads `common` plus its own section, in two lines:
 
 ```hcl
 locals {
-  config_file = yamldecode(file("${path.module}/../config.yaml"))
-  config      = merge(local.config_file.common, local.config_file.eks)
+  config = merge(
+    yamldecode(file("${path.module}/../config.yaml")).common,
+    yamldecode(file("${path.module}/config.yaml")).eks,
+  )
 }
 ```
 
@@ -326,12 +337,12 @@ push to main (merge)  →  terraform plan, then terraform apply
 ```
 
 `Path: /<layer>` is the only part read. The bracket tags are labels for humans;
-if the two ever disagree, the path wins. Five paths are valid and nothing else
+if the two ever disagree, the path wins. Six paths are valid and nothing else
 is — they are the directory names in this repository, so **no `infra-aws/`
 prefix**:
 
 ```
-/bootstrap   /iam   /network   /eks   /ecr
+/bootstrap   /iam   /network   /eks   /ecr   /karpenter
 ```
 
 A commit with no valid `Path:` is **skipped, not failed** — no plan, no apply,
