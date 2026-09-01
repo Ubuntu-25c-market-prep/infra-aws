@@ -51,6 +51,26 @@ variable "github_org_id" {
   }
 }
 
+variable "terraform_infra_v2_repo_id" {
+  description = <<-EOT
+    Numeric id of the terraform-infra-v2 repository, from
+    `gh api /repos/<org>/terraform-infra-v2 --jq .id`.
+
+    Pinned for the same reason as infra_aws_repo_id: that repo's apply role is
+    trust-scoped with StringEquals, not a wildcard. Defaulted rather than fed
+    through TFVARS_iam - repository ids are public facts (this file's comments
+    already carry two of them), unlike the account id, which is what the
+    secret exists to keep out of the repo.
+  EOT
+  type        = string
+  default     = "1336490857"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.terraform_infra_v2_repo_id))
+    error_message = "Must be the numeric repository id."
+  }
+}
+
 variable "infra_aws_repo_id" {
   description = <<-EOT
     Numeric id of this repository, from `gh api /repos/<org>/infra-aws --jq .id`.
