@@ -17,13 +17,14 @@
 #   git commit -m "[add][karpenter] controller + node iam    Path: /karpenter"
 #   git commit -m "[add][sealed-secrets] backup key container Path: /sealed-secrets"
 #   git commit -m "[add][keda] operator irsa role             Path: /keda"
+#   git commit -m "[add][velero] backup bucket + irsa role     Path: /velero"
 #
 # The path is the directory you would `cd` into to run terraform, relative to
-# THIS REPOSITORY. Twelve are valid, and nothing else is:
+# THIS REPOSITORY. Thirteen are valid, and nothing else is:
 #
 #   /bootstrap     /iam       /network          /eks            /ecr
 #   /karpenter     /thanos    /argo-workflows   /cert-manager   /sealed-secrets
-#   /external-dns  /keda
+#   /external-dns  /keda      /velero
 #
 # THIS LIST AND THE `for l in ...` ALLOWLIST BELOW MUST BE KEPT IN STEP. A new
 # layer directory that is not added to the allowlist is silently skipped - the
@@ -131,7 +132,7 @@ jobs:
           # Hyphens survive the `tr` above (they are in the keep set), so
           # multi-word layer names like argo-workflows match correctly.
           layer=""
-          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets external-dns keda; do
+          for l in bootstrap iam network eks ecr karpenter thanos argo-workflows cert-manager sealed-secrets external-dns keda velero; do
             case "$TEXT" in
               *"Path: /$l "*|*"Path:/$l "*) layer="$l"; break ;;
             esac
