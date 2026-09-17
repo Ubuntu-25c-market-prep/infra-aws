@@ -38,6 +38,12 @@ locals {
     Vera-Terna            = { first = "Vera", cto = false, workstreams = ["rancher", "finops"] }
     zhemaitite-anastasiia = { first = "Nastya", cto = false, workstreams = ["finops", "istio", "zerotrust"] }
 
+    # Added 2026-09-16. Repo collaborators, not yet GitHub org members, so they
+    # sit on no GitHub team; the workstream here is what puts them in
+    # u25c-engineers. Both work on terraform-infra-v2.
+    "120nataliemel1"   = { first = "Natalie", cto = false, workstreams = ["infra"] }
+    DavidPantelemoniuk = { first = "David", cto = false, workstreams = ["infra"] }
+
     # No workstream means no engineer access - read-only until someone assigns
     # one. This is the model working, not an oversight to paper over.
     #
