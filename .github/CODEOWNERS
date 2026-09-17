@@ -40,6 +40,9 @@
 # Monitoring - Thanos object storage and the role Prometheus writes with.
 /thanos/             @Ubuntu-25c-market-prep/monitoring
 
+# Velero - backup, restore and disaster recovery drills.
+/velero/             @Ubuntu-25c-market-prep/velero
+
 # FinOps - AWS Budgets and cost anomaly detection.
 /budgets/            @Ubuntu-25c-market-prep/finops
 

@@ -1,0 +1,11 @@
+velero:
+  # S3 bucket suffix — full name becomes <org_prefix>-shared-<bucket_suffix>
+  bucket_suffix: "velero-backups"
+
+  # Must match serviceAccount.server.name in the gitops-flux HelmRelease.
+  namespace: "velero"
+  service_account: "velero"
+
+  # Floor under the longest ttl any Schedule in gitops-flux sets. Keep these
+  # two numbers moving together - see modules/velero/variables.tf.
+  backup_retention_days: 90
