@@ -44,6 +44,11 @@ locals {
     "120nataliemel1"   = { first = "Natalie", cto = false, workstreams = ["infra"] }
     DavidPantelemoniuk = { first = "David", cto = false, workstreams = ["infra"] }
 
+    # Added 2026-09-20. Same shape as the two above: repo access on
+    # terraform-infra-v2 and gitops-flux is granted by hand on GitHub, and the
+    # workstreams here are what put him in u25c-engineers.
+    moathsalman4 = { first = "Moath", cto = false, workstreams = ["infra", "flux"] }
+
     # No workstream means no engineer access - read-only until someone assigns
     # one. This is the model working, not an oversight to paper over.
     #
