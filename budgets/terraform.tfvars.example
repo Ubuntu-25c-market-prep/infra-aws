@@ -17,14 +17,18 @@ workload_account_ids = [
   "REPLACE-WORKLOAD-ACCOUNT-ID", # Dev - the single workload account
 ]
 
-# Nothing is deployed yet, so start low and raise it deliberately as waves land.
-# The full single-cluster cost model is roughly $2,225/month.
-monthly_ceiling_usd      = "200"
+# Raise this deliberately as waves land. The full single-cluster cost model is
+# roughly $2,225/month. Raised from 200 to 500 on 2026-09-22 when the dev v2
+# cluster alone (~$180/month) no longer fit under the old ceiling.
+#
+# The live value is the gitignored terraform.tfvars, not this file. Changing it
+# in the console does not stick: the next apply restores whatever tfvars says.
+monthly_ceiling_usd      = "500"
 freeze_threshold_percent = 100
 freeze_approval_model    = "AUTOMATIC"
 
 per_account_ceilings_usd = {
-  "REPLACE-WORKLOAD-ACCOUNT-ID" = "200"
+  "REPLACE-WORKLOAD-ACCOUNT-ID" = "500"
 }
 
 anomaly_threshold_usd = 25
