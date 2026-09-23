@@ -449,10 +449,32 @@ is still true with:
 aws organizations list-targets-for-policy --policy-id p-d5aegejc   # expect empty
 ```
 
+### Current ceiling
+
+**$500/month** for both `u25c-org-monthly` and the Dev per-account budget,
+raised from $200 on 2026-09-22 when the v2 dev cluster alone stopped fitting.
+The value lives in the gitignored `budgets/terraform.tfvars`, not in this repo:
+changing it in the console does not stick, because the next apply restores
+whatever tfvars says.
+
 ### Lifting a freeze
 
-`terraform output detach_freeze_command` prints the exact detach command. Fix
-the cause first, or it re-attaches at the next evaluation.
+Raising the ceiling alone does not lift a freeze, and detaching the SCP alone
+does not hold. Both, in this order:
+
+1. Detach: `terraform output detach_freeze_command` prints the exact command.
+   Do this first so the apply below cannot widen the freeze while it is still
+   attached.
+2. Raise `monthly_ceiling_usd` and `per_account_ceilings_usd` in tfvars and
+   apply from a management-account session. Changing the limit resets the
+   budget action to `STANDBY` on its own, so it re-arms at the new ceiling.
+
+Do **not** edit the policy content by hand to unblock one action. The next
+apply reverts it, and a freeze that allows `ec2:RunInstances` is not a freeze.
+
+Console note: a budget shows *Exceeded* when any alert tier is crossed, not only
+the limit. `u25c-org-monthly` alerts from 25%, so it reads *Exceeded* well
+before the freeze threshold; the per-account budget starts at 80%.
 
 ## organization/ — guardrails that apply to everyone
 
