@@ -71,7 +71,7 @@ variable "organization_id" {
 variable "monthly_budget_usd" {
   description = "Monthly cost budget. Notifications fire at 50%, 80%, 100% actual and 100% forecast."
   type        = string
-  default     = "2500"
+  default     = "500"
 }
 
 variable "anomaly_threshold_usd" {

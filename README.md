@@ -268,8 +268,9 @@ where the account can spend without a budget watching it.
 - **Audit** — multi-region CloudTrail with log file validation, KMS-encrypted.
 - **Baseline** — account-level S3 public access block, EBS encryption by default, IAM password policy.
 
-Default budget is **$200/month**, deliberately low while nothing is deployed.
-`monthly_budget_usd` before applying if that is not your ceiling.
+Default budget is **$500/month**, matching the org ceiling in `budgets/`. Set
+`monthly_budget_usd` before applying if that is not your ceiling. The live value
+comes from the `TFVARS_BOOTSTRAP` secret, not this file - see [CI](#ci).
 
 ## What iam creates
 
