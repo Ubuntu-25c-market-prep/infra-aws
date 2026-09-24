@@ -17,7 +17,7 @@ state_reader_account_ids = ["REPLACE-MANAGEMENT-ACCOUNT-ID"]
 
 # Account-level budget. The org-wide ceiling with the enforcing freeze action
 # lives in budgets/, which runs in the management account.
-monthly_budget_usd    = "200"
+monthly_budget_usd    = "500"
 anomaly_threshold_usd = 25
 
 # Use a role address the whole team can reach, not a personal mailbox.
