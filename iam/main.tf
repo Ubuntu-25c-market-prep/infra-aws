@@ -62,7 +62,6 @@ locals {
     "infra-aws",
     "gitops-flux",
     "gitops-argocd",
-    "terraform-infra-v2",
   ]
 
   oidc_arn = "arn:${data.aws_partition.current.partition}:iam::${var.account_id}:oidc-provider/token.actions.githubusercontent.com"
@@ -157,28 +156,13 @@ data "aws_iam_policy_document" "plan_state" {
     actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
     resources = [
       "arn:${data.aws_partition.current.partition}:s3:::${var.state_bucket}/*",
-      # terraform-infra-v2 keeps one state bucket per environment; only dev
-      # exists today. Add uat/prod here when those environments are stood up.
-      "arn:${data.aws_partition.current.partition}:s3:::dev-${var.org_prefix}-tfstate-infra-v2-${var.account_id}/*",
     ]
   }
   statement {
-    effect  = "Allow"
-    actions = ["kms:Decrypt", "kms:GenerateDataKey"]
-    resources = [
-      var.kms_key_arn,
-      data.aws_kms_key.infra_v2_state.arn,
-    ]
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = [var.kms_key_arn]
   }
-}
-
-# Resolved by alias rather than passed as a variable: the ARN embeds the
-# account id, which stays out of committed files, and the alias does not.
-# The key is created by terraform-infra-v2's bootstrap (outside Terraform),
-# so a missing key fails this lookup loudly at plan time - which is the
-# right time to hear about it.
-data "aws_kms_key" "infra_v2_state" {
-  key_id = "alias/dev-${var.org_prefix}-infra-v2-tfstate"
 }
 
 resource "aws_iam_role_policy" "plan_state" {
@@ -264,65 +248,6 @@ data "aws_iam_policy_document" "apply_guardrails" {
 resource "aws_iam_role_policy" "apply_guardrails" {
   name   = "guardrails"
   role   = aws_iam_role.apply.id
-  policy = data.aws_iam_policy_document.apply_guardrails.json
-}
-
-###############################################################################
-# Apply role for terraform-infra-v2 - mutating, only through that repo's
-# GitHub environments
-#
-# Managed here rather than in terraform-infra-v2 itself because that repo's CI
-# assumes this role - it cannot create the credential it runs under. Same
-# reasoning as our own apply role living next to the OIDC provider.
-#
-# The subjects are environment-form (apply jobs there run inside GitHub
-# environments), so they do not encode the branch. The guard is branch
-# protection on that repo's main - and, as with our apply role, StringEquals
-# on a pinned repo id rather than a wildcard. Only dev exists today; add the
-# uat/prod subjects when those environments are stood up.
-###############################################################################
-
-data "aws_iam_policy_document" "infra_v2_apply_trust" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "${local.org_subject_prefix}/terraform-infra-v2@${var.terraform_infra_v2_repo_id}:environment:dev",
-      ]
-    }
-  }
-}
-
-resource "aws_iam_role" "infra_v2_apply" {
-  name                 = "${var.org_prefix}-infra-v2-gha-apply"
-  description          = "Terraform apply from terraform-infra-v2 GitHub environments"
-  assume_role_policy   = data.aws_iam_policy_document.infra_v2_apply_trust.json
-  max_session_duration = 3600
-}
-
-resource "aws_iam_role_policy_attachment" "infra_v2_apply_admin" {
-  role       = aws_iam_role.infra_v2_apply.name
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AdministratorAccess"
-}
-
-resource "aws_iam_role_policy" "infra_v2_apply_guardrails" {
-  name   = "guardrails"
-  role   = aws_iam_role.infra_v2_apply.id
   policy = data.aws_iam_policy_document.apply_guardrails.json
 }
 
